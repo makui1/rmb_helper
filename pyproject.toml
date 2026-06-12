@@ -1,0 +1,23 @@
+[project]
+name = "rmb_helper"
+version = "0.1.0"
+description = "任免审批表小工具"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "docxtpl>=0.16.0",
+    "openpyxl>=3.1.0",
+    "pillow>=11.3.0",
+    "pyside6==6.11.0",
+    "python-docx>=1.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-qt>=4.4.0",
+]
+
+[[index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
