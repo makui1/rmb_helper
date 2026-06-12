@@ -18,6 +18,9 @@ dev = [
     "pytest-qt>=4.4.0",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
 [[index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
