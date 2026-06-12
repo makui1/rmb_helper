@@ -23,7 +23,7 @@ class LrmxFile:
             new_elem = ET.SubElement(self._root, field)
             new_elem.text = value
 
-    def save(self, path: Optional[Path] = None) -> None:
+    def save(self, path: Optional[Path | str] = None) -> None:
         target = Path(path) if path else self.path
         ET.indent(self._tree, space='    ')
         self._tree.write(
