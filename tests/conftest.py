@@ -14,13 +14,27 @@ def sample_lrmx(tmp_path):
     <ShenFenZheng>110101199001011234</ShenFenZheng>
     <RuDangShiJian>201506</RuDangShiJian>
     <CanJiaGongZuoShiJian>201207</CanJiaGongZuoShiJian>
+    <DaoLingNianYue>205501</DaoLingNianYue>
     <JianKangZhuangKuang>健康</JianKangZhuangKuang>
     <XianRenZhiWu>科员</XianRenZhiWu>
     <NiRenZhiWu/>
     <NiMianZhiWu/>
     <ZhengZhiMianMao>中共党员</ZhengZhiMianMao>
     <QuanRiZhiJiaoYu_XueLi>本科</QuanRiZhiJiaoYu_XueLi>
+    <JianLi>201207--201606  某大学某专业学习
+201607--         某单位科员</JianLi>
+    <JiSuanNianLingShiJian>20260506</JiSuanNianLingShiJian>
     <TianBiaoRen>李四</TianBiaoRen>
+    <ZhaoPian></ZhaoPian>
+    <JiaTingChengYuan>
+        <Item>
+            <ChengWei>妻子</ChengWei>
+            <XingMing>李梅</XingMing>
+            <ChuShengRiQi>199205</ChuShengRiQi>
+            <ZhengZhiMianMao>群众</ZhengZhiMianMao>
+            <GongZuoDanWeiJiZhiWu>某单位职工</GongZuoDanWeiJiZhiWu>
+        </Item>
+    </JiaTingChengYuan>
 </Person>'''
     p = tmp_path / 'zhangsan.lrmx'
     p.write_text(content, encoding='utf-8')

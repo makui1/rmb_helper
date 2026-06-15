@@ -34,3 +34,14 @@ class LrmxFile:
 
     def as_dict(self) -> dict[str, str]:
         return {elem.tag: (elem.text or '') for elem in self._root}
+
+    def family_members(self) -> list[dict[str, str]]:
+        """Return JiaTingChengYuan Items as a list of field dicts."""
+        container = self._root.find('JiaTingChengYuan')
+        if container is None:
+            return []
+        result = []
+        for item in container:
+            member = {child.tag: (child.text or '') for child in item}
+            result.append(member)
+        return result

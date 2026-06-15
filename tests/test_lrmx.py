@@ -42,3 +42,23 @@ def test_save_overwrites_in_place(sample_lrmx):
     lf.save()
     lf2 = LrmxFile(sample_lrmx)
     assert lf2.get('XingMing') == '李雷'
+
+
+def test_family_members_returns_list(sample_lrmx):
+    lf = LrmxFile(sample_lrmx)
+    members = lf.family_members()
+    assert len(members) == 1
+    assert members[0]['ChengWei'] == '妻子'
+    assert members[0]['XingMing'] == '李梅'
+    assert members[0]['ChuShengRiQi'] == '199205'
+
+
+def test_family_members_empty_when_no_jiating(tmp_path):
+    content = '''<?xml version="1.0" encoding="UTF-8"?>
+<Person>
+    <XingMing>测试</XingMing>
+</Person>'''
+    p = tmp_path / 'test.lrmx'
+    p.write_text(content, encoding='utf-8')
+    lf = LrmxFile(p)
+    assert lf.family_members() == []
