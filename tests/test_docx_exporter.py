@@ -55,22 +55,54 @@ def test_format_retire_age_no_birth():
 def test_format_jianli_list_normalizes_6digit():
     text = '199001--199601  某大学学习\n199601--  某单位工作'
     result = _format_jianli_list(text)
-    assert result[0] == '1990.01--1996.01  某大学学习'
-    assert result[1] == '1996.01--         某单位工作'
+    assert result[0] == '1990.01--1996.01\t某大学学习'
+    assert result[1] == '1996.01--\t某单位工作'
 
 
 def test_format_jianli_list_already_formatted():
     text = '1990.01--1996.01  某大学学习\n1996.01--         某单位工作'
     result = _format_jianli_list(text)
-    assert result[0] == '1990.01--1996.01  某大学学习'
-    assert result[1] == '1996.01--         某单位工作'
+    assert result[0] == '1990.01--1996.01\t某大学学习'
+    assert result[1] == '1996.01--\t某单位工作'
+
+
+def test_format_jianli_list_emdash_separator():
+    text = '2000.09—2003.06  兰州气象学校学习\n2003.06—2004.06  待分配'
+    result = _format_jianli_list(text)
+    assert result[0] == '2000.09--2003.06\t兰州气象学校学习'
+    assert result[1] == '2003.06--2004.06\t待分配'
+
+
+def test_format_jianli_list_mixed_separators():
+    text = (
+        '2014.10--2018.03  应急办公室主任\n'
+        '2018.03—2019.11  坡头乡党委副书记\n'
+        '2026.02--  民政局副局长'
+    )
+    result = _format_jianli_list(text)
+    assert result[0] == '2014.10--2018.03\t应急办公室主任'
+    assert result[1] == '2018.03--2019.11\t坡头乡党委副书记'
+    assert result[2] == '2026.02--\t民政局副局长'
+
+
+def test_format_jianli_list_preserves_internal_dash():
+    # The leading em-dash is normalized; the inner '2001.12-2004.12' is kept.
+    text = '2000.09—2003.06  学习(期间:2001.12-2004.12自考取得大专学历)'
+    result = _format_jianli_list(text)
+    assert result[0] == '2000.09--2003.06\t学习(期间:2001.12-2004.12自考取得大专学历)'
+
+
+def test_format_jianli_list_strips_leading_space():
+    text = ' 2021.09--2024.02  政府副县长'
+    result = _format_jianli_list(text)
+    assert result[0] == '2021.09--2024.02\t政府副县长'
 
 
 def test_format_jianli_list_passthrough_non_matching():
     text = '这是普通文字\n1990.01--1996.01  某经历'
     result = _format_jianli_list(text)
-    assert '这是普通文字' in result
-    assert '1990.01--1996.01  某经历' in result
+    assert '\t这是普通文字' in result
+    assert '1990.01--1996.01\t某经历' in result
 
 
 def test_format_jianli_list_returns_list():
@@ -182,22 +214,83 @@ def test_build_context_jianli_is_list(sample_lrmx, tmp_path):
     exporter = DocxExporter(tpl_path)
     ctx = exporter._build_context(LrmxFile(sample_lrmx), tpl)
     assert isinstance(ctx['JianLi'], list)
-    assert ctx['JianLi'][0] == '2012.07--2016.06  某大学某专业学习'
-    assert ctx['JianLi'][1] == '2016.07--         某单位科员'
+    assert ctx['JianLi'][0] == '2012.07--2016.06\t某大学某专业学习'
+    assert ctx['JianLi'][1] == '2016.07--\t某单位科员'
 
 
-def test_build_context_jianli_table(sample_lrmx, tmp_path):
+def test_export_jianli_uses_tab(sample_lrmx, tmp_path):
+    # Template: a table cell that loops the JianLi list into one paragraph per line.
+    # The {%p for %} / {%p endfor %} tags must each occupy their own paragraph.
+    doc = Document()
+    table = doc.add_table(rows=1, cols=1)
+    cell = table.cell(0, 0)
+    cell.paragraphs[0].text = '{%p for line in JianLi %}'
+    cell.add_paragraph('{{line}}')
+    cell.add_paragraph('{%p endfor %}')
+    tpl_path = tmp_path / 'template.docx'
+    doc.save(tpl_path)
+
+    exporter = DocxExporter(tpl_path)
+    out = tmp_path / 'out.docx'
+    exporter.export(LrmxFile(sample_lrmx), out)
+
+    result = Document(out)
+    jianli_paras = [
+        p
+        for t in result.tables
+        for row in t.rows
+        for c in row.cells
+        for p in c.paragraphs
+        if '某大学某专业学习' in p.text or '某单位科员' in p.text
+    ]
+    assert len(jianli_paras) == 2
+    for p in jianli_paras:
+        # Time and experience separated by a real Word tab (reported as \t).
+        assert '\t' in p.text
+        # The code no longer sets indentation; that is configured in the template.
+        assert p.paragraph_format.left_indent is None
+        assert p.paragraph_format.first_line_indent is None
+
+
+def test_build_family_deceased_clears_age(tmp_path):
+    """Family member with '已去世' or '已故' in GongZuoDanWeiJiZhiWu gets Age=''."""
+    lrmx_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Person>
+  <XingMing>测试</XingMing>
+  <JiaTingChengYuan>
+    <Item>
+      <ChengWei>父亲</ChengWei>
+      <XingMing>张父</XingMing>
+      <ChuShengRiQi>194501</ChuShengRiQi>
+      <ZhengZhiMianMao>群众</ZhengZhiMianMao>
+      <GongZuoDanWeiJiZhiWu>已去世</GongZuoDanWeiJiZhiWu>
+    </Item>
+    <Item>
+      <ChengWei>母亲</ChengWei>
+      <XingMing>张母</XingMing>
+      <ChuShengRiQi>194803</ChuShengRiQi>
+      <ZhengZhiMianMao>群众</ZhengZhiMianMao>
+      <GongZuoDanWeiJiZhiWu>已故</GongZuoDanWeiJiZhiWu>
+    </Item>
+    <Item>
+      <ChengWei>妻子</ChengWei>
+      <XingMing>张妻</XingMing>
+      <ChuShengRiQi>197503</ChuShengRiQi>
+      <ZhengZhiMianMao>群众</ZhengZhiMianMao>
+      <GongZuoDanWeiJiZhiWu>某单位职工</GongZuoDanWeiJiZhiWu>
+    </Item>
+  </JiaTingChengYuan>
+</Person>"""
+    p = tmp_path / 'test.lrmx'
+    p.write_text(lrmx_xml, encoding='utf-8')
     tpl_path = make_template(tmp_path / 'template.docx')
     from docxtpl import DocxTemplate
     tpl = DocxTemplate(tpl_path)
     exporter = DocxExporter(tpl_path)
-    ctx = exporter._build_context(LrmxFile(sample_lrmx), tpl)
-    tbl = ctx['JianLiTable']
-    assert isinstance(tbl, list)
-    assert tbl[0]['time'] == '2012.07--2016.06'
-    assert tbl[0]['exp'] == '某大学某专业学习'
-    assert tbl[1]['time'] == '2016.07--'
-    assert tbl[1]['exp'] == '某单位科员'
+    ctx = exporter._build_context(LrmxFile(p), tpl)
+    assert ctx['m0']['Age'] == ''          # 已去世
+    assert ctx['m1']['Age'] == ''          # 已故
+    assert ctx['m2']['Age'] != ''          # alive → has age
 
 
 def test_build_context_retire_field(sample_lrmx, tmp_path):
