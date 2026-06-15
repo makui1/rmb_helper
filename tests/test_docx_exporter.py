@@ -5,7 +5,7 @@ from app.core.lrmx import LrmxFile
 from app.core.docx_exporter import (
     DocxExporter,
     _format_time6, _format_time8,
-    _format_birth, _format_retire,
+    _format_birth, _format_retire_age,
     _format_jianli_list, _calc_age,
 )
 
@@ -37,15 +37,19 @@ def test_format_birth_includes_age():
     assert '\n' in result
 
 
-def test_format_retire_future():
-    result = _format_retire('209901')
-    assert '2099.01' in result
-    assert '后退休' in result
+def test_format_retire_age_calculates_from_birth():
+    from app.core.docx_exporter import _format_retire_age
+    # born 196911, retires 203102 → 2031-1969=62, month 02<11 → 61 years
+    result = _format_retire_age('203102', '196911')
+    assert '2031.02' in result
+    assert '61岁' in result
 
 
-def test_format_retire_past():
-    result = _format_retire('200001')
-    assert '已到龄' in result
+def test_format_retire_age_no_birth():
+    from app.core.docx_exporter import _format_retire_age
+    result = _format_retire_age('203102', '')
+    assert '2031.02' in result
+    assert '岁' not in result
 
 
 def test_format_jianli_list_normalizes_6digit():
@@ -156,18 +160,19 @@ def test_build_context_strips_invisible(sample_lrmx, tmp_path):
     assert ctx['XingMing'] == '张三'
 
 
-def test_build_context_jiating_has_age(sample_lrmx, tmp_path):
+def test_build_context_jiating_indexed_slots(sample_lrmx, tmp_path):
     tpl_path = make_template(tmp_path / 'template.docx')
     from docxtpl import DocxTemplate
     tpl = DocxTemplate(tpl_path)
     exporter = DocxExporter(tpl_path)
     ctx = exporter._build_context(LrmxFile(sample_lrmx), tpl)
-    assert isinstance(ctx['JiaTingChengYuan'], list)
-    member = ctx['JiaTingChengYuan'][0]
-    assert member['ChengWei'] == '妻子'
-    assert 'Age' in member
-    assert '岁' in member['Age']
-    assert member['ChuShengRiQi'] == '1992.05'
+    # m0 has the one family member from the fixture
+    assert ctx['m0']['ChengWei'] == '妻子'
+    assert '岁' in ctx['m0']['Age']
+    assert ctx['m0']['ChuShengRiQi'] == '1992.05'
+    # m1 and beyond are empty dicts
+    assert ctx['m1']['ChengWei'] == ''
+    assert ctx['m9']['XingMing'] == ''
 
 
 def test_build_context_jianli_is_list(sample_lrmx, tmp_path):
@@ -181,12 +186,26 @@ def test_build_context_jianli_is_list(sample_lrmx, tmp_path):
     assert ctx['JianLi'][1] == '2016.07--         某单位科员'
 
 
+def test_build_context_jianli_table(sample_lrmx, tmp_path):
+    tpl_path = make_template(tmp_path / 'template.docx')
+    from docxtpl import DocxTemplate
+    tpl = DocxTemplate(tpl_path)
+    exporter = DocxExporter(tpl_path)
+    ctx = exporter._build_context(LrmxFile(sample_lrmx), tpl)
+    tbl = ctx['JianLiTable']
+    assert isinstance(tbl, list)
+    assert tbl[0]['time'] == '2012.07--2016.06'
+    assert tbl[0]['exp'] == '某大学某专业学习'
+    assert tbl[1]['time'] == '2016.07--'
+    assert tbl[1]['exp'] == '某单位科员'
+
+
 def test_build_context_retire_field(sample_lrmx, tmp_path):
     tpl_path = make_template(tmp_path / 'template.docx')
     from docxtpl import DocxTemplate
     tpl = DocxTemplate(tpl_path)
     exporter = DocxExporter(tpl_path)
     ctx = exporter._build_context(LrmxFile(sample_lrmx), tpl)
-    # DaoLingNianYue 205501 → far future
+    # DaoLingNianYue 205501, ChuShengNianYue 199001 → 65 years old at retirement
     assert '2055.01' in ctx['DaoLingNianYue']
-    assert '后退休' in ctx['DaoLingNianYue']
+    assert '65岁' in ctx['DaoLingNianYue']
