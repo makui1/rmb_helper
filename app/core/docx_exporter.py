@@ -1,4 +1,5 @@
 import base64
+import html as _html
 import re
 from datetime import date
 from io import BytesIO
@@ -14,6 +15,31 @@ from .lrmx import LrmxFile
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 MAX_FAMILY_SLOTS = 10   # how many m0..m9 slots to expose; should exceed any template
+
+# JianLi font tiers: (max_line_count, font_size_pt)
+# Starting at (12, 14.0), each tier adds 2 lines and drops 0.5 pt.
+# Line spacing = font_size + 1 pt.
+_JIANLI_FONT_TIERS: list[tuple[int, float]] = [
+    (12, 14.0),
+    (14, 13.5),
+    (16, 13.0),
+    (18, 12.5),
+    (20, 12.0),
+    (22, 11.5),
+    (24, 11.0),
+    (25, 10.5),
+    (26, 10.0),
+    (28,  9.5),
+    (29,  9.0),
+    (30,  8.5),
+    (32,  8.0),
+    (38,  7.5),
+    (40,  7.0),
+    (42,  6.5),
+    (44,  6.0),
+    (46,  5.5),
+    (48,  5.0),
+]
 
 _PT_PER_EMU = 12700      # 1 pt = 12700 EMU
 _CELL_MARGIN_PT = 5.4    # Word default cell left/right inner margin ≈ 1.9 mm each side
@@ -180,16 +206,15 @@ def _tc_at_grid_col(tr, target_col: int):
     return None
 
 
-def _shrink_para_by_1pt(para, fallback_pt: float = 10.5) -> bool:
-    """Reduce every run's font size in para by 1 pt (min _MIN_FONT_PT). Returns True if changed."""
+def _shrink_para_by_1pt(para, fallback_pt: float = 10.5, target_pt: float = 13.5) -> bool:
+    """Set every run's font size to target_pt. Returns True if anything changed."""
     if not para.runs:
         return False
     font_pt = _para_font_size_pt(para) or fallback_pt
-    new_pt = 13.5
-    if new_pt == font_pt:
+    if target_pt == font_pt:
         return False
     for run in para.runs:
-        run.font.size = Pt(new_pt)
+        run.font.size = Pt(target_pt)
     return True
 
 
@@ -225,7 +250,7 @@ class DocxExporter:
         self.template_path = Path(template_path)
         self._photo_cell_cache: Optional[tuple[int, int]] = None  # (width_emu, height_emu)
         self._xueli_shrink_text: Optional[str] = None   # XueLi text that needs post-shrink
-        self._jianli_needs_shrink: bool = False          # JianLi > 12 lines
+        self._jianli_line_count: int = 0                   # number of rendered JianLi lines
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
         tpl = DocxTemplate(self.template_path)
@@ -257,13 +282,13 @@ class DocxExporter:
             elif key in _TIME8_FIELDS:
                 ctx[key] = _format_time8(value)
             else:
-                ctx[key] = _INVIS.sub('', value)
+                ctx[key] = _html.escape(_INVIS.sub('', value), quote=False)
 
         # JianLi: list of 'time<TAB>experience' strings for a
         # {%p for line in JianLi %}{{line}}{%p endfor %} loop. Column alignment
         # (hanging indent) is configured in the template, not here.
-        jianli = _format_jianli_list(raw.get('JianLi', ''))
-        self._jianli_needs_shrink = len(jianli) > 12
+        jianli = [_html.escape(l, quote=False) for l in _format_jianli_list(raw.get('JianLi', ''))]
+        self._jianli_line_count = len(jianli)
         ctx['JianLi'] = jianli
 
         # QuanRiZhiJiaoYu XueLi/XueWei overflow:
@@ -362,9 +387,25 @@ class DocxExporter:
         return changed
 
     def _shrink_jianli_cell(self, doc) -> bool:
-        """Shrink JianLi cell paragraphs to 13.5pt and set line spacing when > 12 lines."""
-        if not self._jianli_needs_shrink:
+        """Apply font/spacing to JianLi cell based on line count.
+
+        Looks up _JIANLI_FONT_TIERS: first tier where line_limit >= line count.
+        Line spacing = font_size + 1 pt.  No change when line count ≤ first tier.
+        """
+        total = self._jianli_line_count
+        target_pt = _JIANLI_FONT_TIERS[0][1]
+        for char_limit, font_pt in _JIANLI_FONT_TIERS:
+            if total <= char_limit:
+                target_pt = font_pt
+                break
+        else:
+            target_pt = _JIANLI_FONT_TIERS[-1][1]
+
+        if target_pt >= _JIANLI_FONT_TIERS[0][1]:
             return False
+
+        line_spacing_pt = target_pt + 1.0
+
         changed = False
         processed: set[int] = set()
         for table in doc.tables:
@@ -378,10 +419,10 @@ class DocxExporter:
                         continue
                     processed.add(cid)
                     for para in paras:
-                        if _shrink_para_by_1pt(para):
+                        if _shrink_para_by_1pt(para, target_pt=target_pt):
                             changed = True
                             para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                            para.paragraph_format.line_spacing = Pt(14.5)
+                            para.paragraph_format.line_spacing = Pt(line_spacing_pt)
         return changed
 
     # ── Photo ────────────────────────────────────────────────────────────────

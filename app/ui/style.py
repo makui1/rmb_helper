@@ -168,7 +168,7 @@ QComboBox::drop-down {{
 QCheckBox::indicator {{
     width: 15px;
     height: 15px;
-    border: 1.5px solid #C0BEB8;
+    border: 1px solid #C0BEB8;
     border-radius: 3px;
     background-color: #FFFFFF;
 }}
@@ -183,10 +183,10 @@ QCheckBox::indicator:checked {{
 
 /* ── 单选框 ─────────────────────────────────────────────────────────── */
 QRadioButton::indicator {{
-    width: 14px;
-    height: 14px;
-    border: 1.5px solid #C0BEB8;
-    border-radius: 7px;
+    width: 8px;
+    height: 8px;
+    border: 1px solid #C0BEB8;
+    border-radius: 4px;
     background-color: #FFFFFF;
 }}
 QRadioButton::indicator:checked {{
@@ -198,7 +198,7 @@ QRadioButton::indicator:checked {{
 QListWidget::indicator {{
     width: 15px;
     height: 15px;
-    border: 1.5px solid #C0BEB8;
+    border: 1px solid #C0BEB8;
     border-radius: 3px;
     background-color: #FFFFFF;
 }}
