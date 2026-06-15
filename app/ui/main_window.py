@@ -147,7 +147,11 @@ class MainWindow(QMainWindow):
         sb_layout.setSpacing(0)
 
         self._nav_btns: list[QPushButton] = []
-        for label, icon in [('批量转换', 'convert.svg'), ('批量更新', 'update.svg')]:
+        for label, icon in [
+            ('批量转换', 'convert.svg'),
+            ('批量更新', 'update.svg'),
+            ('版本兼容', 'compat.svg'),
+        ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
             self._nav_btns.append(btn)
@@ -164,10 +168,12 @@ class MainWindow(QMainWindow):
         # 内容区
         from app.ui.tabs.convert_tab import ConvertTab
         from app.ui.tabs.update_tab import UpdateTab
+        from app.ui.tabs.compat_tab import CompatTab
 
         self._stack = QStackedWidget()
         self._stack.addWidget(ConvertTab())
         self._stack.addWidget(UpdateTab())
+        self._stack.addWidget(CompatTab())
         self._stack.addWidget(SettingsTab())
 
         body_layout.addWidget(sidebar_container)
