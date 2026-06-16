@@ -55,7 +55,7 @@ class _TitleBar(QWidget):
 
         # ── 中央：软件名居中
         layout.addStretch(1)
-        title_label = QLabel('任免表工具箱')
+        title_label = QLabel('任 免 表 工 具 箱')
         title_label.setObjectName('titleBarAppName')
         layout.addWidget(title_label)
         layout.addStretch(1)
@@ -182,7 +182,6 @@ class MainWindow(QMainWindow):
         self._nav_btns: list[QPushButton] = []
         for label, icon in [
             ('批量转换', 'convert.svg'),
-            ('批量更新', 'update.svg'),
             ('版本兼容', 'compat.svg'),
             ('批量核验', 'verify.svg'),
         ]:
@@ -201,16 +200,14 @@ class MainWindow(QMainWindow):
 
         # 内容区
         from app.ui.tabs.convert_tab import ConvertTab
-        from app.ui.tabs.update_tab import UpdateTab
         from app.ui.tabs.compat_tab import CompatTab
         from app.ui.tabs.verify_tab import VerifyTab
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(ConvertTab())
-        self._stack.addWidget(UpdateTab())
-        self._stack.addWidget(CompatTab())
-        self._stack.addWidget(VerifyTab())
-        self._stack.addWidget(SettingsTab())
+        self._stack.addWidget(ConvertTab())   # index 0 → 批量转换
+        self._stack.addWidget(CompatTab())    # index 1 → 版本兼容
+        self._stack.addWidget(VerifyTab())    # index 2 → 批量核验
+        self._stack.addWidget(SettingsTab())  # index 3 → 设置
 
         body_layout.addWidget(sidebar_container)
         body_layout.addWidget(self._stack)
