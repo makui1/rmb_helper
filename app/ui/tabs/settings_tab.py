@@ -1,10 +1,14 @@
+import json
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QListWidget, QListWidgetItem,
     QInputDialog, QFileDialog, QMessageBox,
+    QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
 )
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from app.utils.naming import PRESETS
+from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
 
 
 class SettingsTab(QWidget):
@@ -57,6 +61,40 @@ class SettingsTab(QWidget):
         rule_btns.addStretch()
         layout.addLayout(rule_btns)
 
+        # 核验字段自动匹配
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep)
+
+        alias_label = QLabel('核验字段自动匹配')
+        alias_label.setObjectName('sectionTitle')
+        layout.addWidget(alias_label)
+
+        alias_sub = QLabel('加载 Excel 文件后，自动将匹配的表头映射到对应任免表字段。多个关键词用逗号分隔。')
+        alias_sub.setStyleSheet('color: #888880; font-size: 12px;')
+        alias_sub.setWordWrap(True)
+        layout.addWidget(alias_sub)
+
+        self._alias_table = QTableWidget(len(LRMX_FIELDS), 3)
+        self._alias_table.setHorizontalHeaderLabels(['字段名', '任免表字段', 'Excel 匹配关键词（逗号分隔）'])
+        self._alias_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self._alias_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self._alias_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._alias_table.verticalHeader().setVisible(False)
+        self._alias_table.setMinimumHeight(240)
+        for i, (tag, display) in enumerate(LRMX_FIELDS):
+            display_item = QTableWidgetItem(display)
+            display_item.setFlags(display_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            tag_item = QTableWidgetItem(tag)
+            tag_item.setFlags(tag_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            tag_item.setForeground(Qt.GlobalColor.gray)
+            aliases = DEFAULT_FIELD_ALIASES.get(tag, [])
+            alias_item = QTableWidgetItem(', '.join(aliases))
+            self._alias_table.setItem(i, 0, display_item)
+            self._alias_table.setItem(i, 1, tag_item)
+            self._alias_table.setItem(i, 2, alias_item)
+        layout.addWidget(self._alias_table)
+
         save_btn = QPushButton('保存设置')
         save_btn.setObjectName('primary')
         save_btn.clicked.connect(self._save)
@@ -100,10 +138,31 @@ class SettingsTab(QWidget):
         for r in rules:
             self._rule_list.addItem(r)
 
+        raw = self._settings.value('verify_field_aliases', '')
+        if raw:
+            try:
+                stored: dict[str, str] = json.loads(raw)
+            except Exception:
+                stored = {}
+            for i, (tag, _) in enumerate(LRMX_FIELDS):
+                if tag in stored:
+                    item = self._alias_table.item(i, 2)
+                    if item:
+                        item.setText(stored[tag])
+
     def _save(self):
         self._settings.setValue('template_path', self._tpl_edit.text())
         rules = [self._rule_list.item(i).text() for i in range(self._rule_list.count())]
         self._settings.setValue('naming_rules', rules)
+
+        aliases: dict[str, str] = {}
+        for i, (tag, _) in enumerate(LRMX_FIELDS):
+            item = self._alias_table.item(i, 2)
+            val = item.text().strip() if item else ''
+            if val:
+                aliases[tag] = val
+        self._settings.setValue('verify_field_aliases', json.dumps(aliases, ensure_ascii=False))
+
         QMessageBox.information(self, '保存成功', '设置已保存。')
 
     def template_path(self) -> str:

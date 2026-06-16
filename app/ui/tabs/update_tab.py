@@ -3,12 +3,13 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem, QLineEdit,
     QRadioButton, QButtonGroup, QTextEdit, QFileDialog,
-    QSizePolicy, QMenu, QDialog, QProgressBar, QFrame,
+    QSplitter, QFrame,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.core.excel_handler import ExcelHandler, MatchMode
+from app.ui.widgets.file_panel import LrmxFilePanel
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
@@ -27,16 +28,6 @@ FIELD_LABELS: dict[str, str] = {
 
 # ── background workers ────────────────────────────────────────────────────────
 
-class _FolderScanWorker(QThread):
-    done = Signal(list)
-
-    def __init__(self, folder: str, parent=None):
-        super().__init__(parent)
-        self._folder = folder
-
-    def run(self):
-        paths = sorted(str(p) for p in Path(self._folder).rglob('*.lrmx'))
-        self.done.emit(paths)
 
 
 class _Worker(QThread):
@@ -61,119 +52,6 @@ class _Worker(QThread):
 
 # ── shared list widgets ───────────────────────────────────────────────────────
 
-class _LoadingDialog(QDialog):
-    def __init__(self, parent, message: str = '正在扫描，请稍候…'):
-        super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setModal(True)
-        self.setObjectName('loadingDialog')
-        self.setFixedSize(260, 90)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 20, 28, 20)
-        layout.setSpacing(12)
-
-        lbl = QLabel(message)
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setObjectName('loadingLabel')
-        layout.addWidget(lbl)
-
-        bar = QProgressBar()
-        bar.setRange(0, 0)
-        bar.setFixedHeight(4)
-        bar.setTextVisible(False)
-        bar.setObjectName('loadingBar')
-        layout.addWidget(bar)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if self.parent():
-            pg = self.parent().frameGeometry()
-            self.move(
-                pg.center().x() - self.width() // 2,
-                pg.center().y() - self.height() // 2,
-            )
-
-
-class _FileList(QListWidget):
-    empty_clicked = Signal()
-    _HINT = '拖放 .lrmx 文件至此，或点击「添加」'
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.viewport().installEventFilter(self)
-
-    def eventFilter(self, obj, event):
-        if (obj is self.viewport()
-                and event.type() == QEvent.Type.MouseButtonPress
-                and event.button() == Qt.MouseButton.LeftButton
-                and self.count() == 0):
-            self.empty_clicked.emit()
-        return super().eventFilter(obj, event)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.count() == 0:
-            painter = QPainter(self.viewport())
-            painter.setPen(QColor('#BBBBBB'))
-            font = self.font()
-            font.setPointSize(11)
-            painter.setFont(font)
-            painter.drawText(
-                self.viewport().rect(),
-                Qt.AlignmentFlag.AlignCenter,
-                self._HINT,
-            )
-            painter.end()
-
-
-class _FileRow(QWidget):
-    removed = Signal(QListWidgetItem)
-    _SEP_NORMAL = QColor('#E8E6E0')
-    _SEP_HOVER  = QColor('#1A1A1A')
-
-    def __init__(self, path: str, item: QListWidgetItem, parent=None):
-        super().__init__(parent)
-        self._item = item
-        self._hovered = False
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 8, 6)
-        layout.setSpacing(8)
-
-        icon = QLabel('📄')
-        icon.setFixedWidth(18)
-        layout.addWidget(icon)
-
-        name = QLabel(Path(path).name)
-        name.setObjectName('fileItemName')
-        name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        layout.addWidget(name, 1)
-
-        btn = QPushButton('×')
-        btn.setObjectName('fileItemRemove')
-        btn.setFixedSize(20, 20)
-        btn.clicked.connect(lambda: self.removed.emit(self._item))
-        layout.addWidget(btn)
-
-    def event(self, e: QEvent) -> bool:
-        if e.type() == QEvent.Type.HoverEnter:
-            self._hovered = True
-            self.update()
-        elif e.type() == QEvent.Type.HoverLeave:
-            self._hovered = False
-            self.update()
-        return super().event(e)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        color = self._SEP_HOVER if self._hovered else self._SEP_NORMAL
-        painter.setPen(QPen(color, 1))
-        y = self.height() - 1
-        painter.drawLine(10, y, self.width() - 10, y)
-        painter.end()
 
 
 # ── tab widget ────────────────────────────────────────────────────────────────
@@ -182,7 +60,6 @@ class UpdateTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
-        self._scan_worker = None
         self._log_entries: list[tuple[str, str]] = []
         self._active_filter = 'all'
         self._build_ui()
@@ -201,46 +78,28 @@ class UpdateTab(QWidget):
         sub.setStyleSheet('color: #888880; font-size: 12px;')
         layout.addWidget(sub)
 
-        # ── lrmx 文件列表 ───────────────────────────────────────────────────────
-        list_header = QHBoxLayout()
-        list_header.setContentsMargins(0, 0, 0, 0)
-        list_header.setSpacing(6)
-        list_header.addStretch()
+        # ── 分割器：上方文件面板 / 下方控件+日志 ──────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setChildrenCollapsible(False)
+        layout.addWidget(splitter, 1)
 
-        add_btn = QPushButton('+ 添加')
-        add_btn.setFixedHeight(26)
-        add_menu = QMenu(add_btn)
-        add_menu.addAction('选择文件…', self._pick_files)
-        add_menu.addAction('选择文件夹…', self._pick_folder)
-        add_btn.setMenu(add_menu)
+        self._file_panel = LrmxFilePanel()
+        splitter.addWidget(self._file_panel)
 
-        del_btn = QPushButton('删除选中')
-        del_btn.setFixedHeight(26)
-        del_btn.clicked.connect(self._remove_selected)
+        bottom = QWidget()
+        bot_layout = QVBoxLayout(bottom)
+        bot_layout.setContentsMargins(0, 0, 0, 0)
+        bot_layout.setSpacing(12)
+        splitter.addWidget(bottom)
 
-        clear_btn = QPushButton('清空')
-        clear_btn.setFixedHeight(26)
-        clear_btn.clicked.connect(self._clear_files)
-
-        list_header.addWidget(add_btn)
-        list_header.addWidget(del_btn)
-        list_header.addWidget(clear_btn)
-        layout.addLayout(list_header)
-
-        self._file_list = _FileList()
-        self._file_list.setObjectName('fileList')
-        self._file_list.setMinimumHeight(100)
-        self._file_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        self._file_list.empty_clicked.connect(lambda: add_menu.exec(
-            add_btn.mapToGlobal(add_btn.rect().bottomLeft())
-        ))
-        layout.addWidget(self._file_list)
-
-        sep1 = QFrame()
-        sep1.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep1)
+        splitter.setSizes([140, 500])
+        splitter.setHandleWidth(4)
 
         # ── Excel 文件 ─────────────────────────────────────────────────────────
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        bot_layout.addWidget(sep1)
+
         xl_row = QHBoxLayout()
         xl_label = QLabel('Excel 文件')
         xl_label.setFixedWidth(72)
@@ -254,7 +113,7 @@ class UpdateTab(QWidget):
         xl_row.addWidget(xl_label)
         xl_row.addWidget(self._xl_edit)
         xl_row.addWidget(xl_btn)
-        layout.addLayout(xl_row)
+        bot_layout.addLayout(xl_row)
 
         # ── 匹配依据 ───────────────────────────────────────────────────────────
         match_row = QHBoxLayout()
@@ -275,11 +134,11 @@ class UpdateTab(QWidget):
         match_row.addSpacing(12)
         match_row.addWidget(self._rb_both)
         match_row.addStretch()
-        layout.addLayout(match_row)
+        bot_layout.addLayout(match_row)
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep2)
+        bot_layout.addWidget(sep2)
 
         # ── 更新字段多选 ───────────────────────────────────────────────────────
         field_header = QHBoxLayout()
@@ -297,7 +156,7 @@ class UpdateTab(QWidget):
         sel_none_btn.clicked.connect(self._deselect_all_fields)
         field_header.addWidget(sel_all_btn)
         field_header.addWidget(sel_none_btn)
-        layout.addLayout(field_header)
+        bot_layout.addLayout(field_header)
 
         self._field_list = QListWidget()
         self._field_list.setObjectName('fileList')
@@ -307,7 +166,7 @@ class UpdateTab(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, key)
             item.setCheckState(Qt.CheckState.Unchecked)
             self._field_list.addItem(item)
-        layout.addWidget(self._field_list)
+        bot_layout.addWidget(self._field_list)
 
         # ── 开始按钮 ───────────────────────────────────────────────────────────
         run_row = QHBoxLayout()
@@ -318,7 +177,7 @@ class UpdateTab(QWidget):
         self._run_btn.setObjectName('primary')
         self._run_btn.clicked.connect(self._run)
         run_row.addWidget(self._run_btn)
-        layout.addLayout(run_row)
+        bot_layout.addLayout(run_row)
 
         # ── 日志 ───────────────────────────────────────────────────────────────
         log_header = QHBoxLayout()
@@ -336,13 +195,13 @@ class UpdateTab(QWidget):
             log_header.addWidget(btn)
             self._log_filter_btns.append(btn)
         self._log_filter_btns[0].setChecked(True)
-        layout.addLayout(log_header)
+        bot_layout.addLayout(log_header)
 
         self._log = QTextEdit()
         self._log.setObjectName('logView')
         self._log.setReadOnly(True)
-        self._log.setMinimumHeight(100)
-        layout.addWidget(self._log)
+        self._log.setMinimumHeight(80)
+        bot_layout.addWidget(self._log, 1)
 
     # ── field helpers ─────────────────────────────────────────────────────────
 
@@ -354,69 +213,7 @@ class UpdateTab(QWidget):
         for i in range(self._field_list.count()):
             self._field_list.item(i).setCheckState(Qt.CheckState.Unchecked)
 
-    # ── file list helpers ─────────────────────────────────────────────────────
-
-    def _add_file(self, path: str):
-        for i in range(self._file_list.count()):
-            if self._file_list.item(i).data(Qt.ItemDataRole.UserRole) == path:
-                return
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, path)
-        item.setSizeHint(QSize(0, 34))
-        self._file_list.addItem(item)
-        row = _FileRow(path, item)
-        row.removed.connect(self._remove_item)
-        self._file_list.setItemWidget(item, row)
-
-    def _remove_item(self, item: QListWidgetItem):
-        self._file_list.takeItem(self._file_list.row(item))
-
-    def _remove_selected(self):
-        for item in self._file_list.selectedItems():
-            self._file_list.takeItem(self._file_list.row(item))
-
-    def _clear_files(self):
-        self._file_list.clear()
-
-    def _pick_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, '选择 lrmx 文件', '', '任免审批表 (*.lrmx)'
-        )
-        for p in paths:
-            self._add_file(p)
-
-    def _pick_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, '选择包含 lrmx 文件的文件夹')
-        if not folder:
-            return
-        dlg = _LoadingDialog(self, '正在扫描文件夹…')
-        self._scan_worker = _FolderScanWorker(folder)
-
-        def _on_done(paths):
-            batch = list(paths)
-            def add_batch():
-                chunk, rest = batch[:20], batch[20:]
-                for p in chunk:
-                    self._add_file(p)
-                batch.clear()
-                batch.extend(rest)
-                if batch:
-                    QTimer.singleShot(0, add_batch)
-                else:
-                    dlg.accept()
-            QTimer.singleShot(0, add_batch)
-
-        self._scan_worker.done.connect(_on_done)
-        self._scan_worker.start()
-        dlg.exec()
-
-    def _files(self) -> list[str]:
-        return [
-            self._file_list.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self._file_list.count())
-        ]
-
-    # ── drag & drop ───────────────────────────────────────────────────────────
+    # ── drag & drop (tab-level, delegates to panel) ───────────────────────────
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -426,7 +223,7 @@ class UpdateTab(QWidget):
         for url in event.mimeData().urls():
             path = url.toLocalFile()
             if path.lower().endswith('.lrmx'):
-                self._add_file(path)
+                self._file_panel.add_file(path)
 
     # ── Excel picker ──────────────────────────────────────────────────────────
 
@@ -475,7 +272,7 @@ class UpdateTab(QWidget):
     # ── run ───────────────────────────────────────────────────────────────────
 
     def _run(self):
-        files = self._files()
+        files = self._file_panel.files()
         if not files:
             self._append_log('⚠ 请先添加 lrmx 文件')
             return

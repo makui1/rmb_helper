@@ -219,7 +219,7 @@ class MainWindow(QMainWindow):
         self._switch_tab(0)
 
     _SIDEBAR_W_NORMAL = 172
-    _SIDEBAR_W_MAX    = 210
+    _SIDEBAR_W_MAX    = 250
 
     def toggle_maximize(self):
         if self._pseudo_maximized:

@@ -5,17 +5,21 @@ import html as _html_lib
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QListWidget, QListWidgetItem, QLineEdit,
+    QPushButton, QLineEdit,
     QRadioButton, QButtonGroup, QFileDialog,
-    QSizePolicy, QMenu, QDialog, QProgressBar, QFrame,
-    QScrollArea, QSpinBox, QLayout,
+    QSizePolicy, QFrame,
+    QScrollArea, QSpinBox, QLayout, QSplitter,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer, QRect, QPoint
+from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QRect, QPoint, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
+from app.ui.widgets.file_panel import LrmxFilePanel
+
+from PySide6.QtCore import QSettings
 
 from app.core.excel_handler import MatchMode
 from app.core.verify_handler import (
-    VerifyHandler, PersonResult, FieldResult, read_excel_headers, get_lrmx_fields,
+    VerifyHandler, PersonResult, FieldResult,
+    read_excel_headers, LRMX_FIELDS, DEFAULT_FIELD_ALIASES,
 )
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
@@ -128,16 +132,6 @@ class _DiffPanel(QWidget):
 
 # ── background workers ────────────────────────────────────────────────────────
 
-class _FolderScanWorker(QThread):
-    done = Signal(list)
-
-    def __init__(self, folder: str, parent=None):
-        super().__init__(parent)
-        self._folder = folder
-
-    def run(self):
-        paths = sorted(str(p) for p in Path(self._folder).rglob('*.lrmx'))
-        self.done.emit(paths)
 
 
 class _VerifyWorker(QThread):
@@ -158,121 +152,27 @@ class _VerifyWorker(QThread):
         self.finished.emit()
 
 
-# ── shared list widgets ───────────────────────────────────────────────────────
-
-class _LoadingDialog(QDialog):
-    def __init__(self, parent, message: str = '正在扫描，请稍候…'):
-        super().__init__(parent)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setModal(True)
-        self.setObjectName('loadingDialog')
-        self.setFixedSize(260, 90)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 20, 28, 20)
-        layout.setSpacing(12)
-
-        lbl = QLabel(message)
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setObjectName('loadingLabel')
-        layout.addWidget(lbl)
-
-        bar = QProgressBar()
-        bar.setRange(0, 0)
-        bar.setFixedHeight(4)
-        bar.setTextVisible(False)
-        bar.setObjectName('loadingBar')
-        layout.addWidget(bar)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if self.parent():
-            pg = self.parent().frameGeometry()
-            self.move(
-                pg.center().x() - self.width() // 2,
-                pg.center().y() - self.height() // 2,
-            )
 
 
-class _FileList(QListWidget):
-    empty_clicked = Signal()
-    _HINT = '拖放 .lrmx 文件至此，或点击「添加」'
+# ── loading overlay ───────────────────────────────────────────────────────────
+
+class _LoadingOverlay(QWidget):
+    """Semi-transparent overlay shown while result layout is settling."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.viewport().installEventFilter(self)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet('background: rgba(248, 245, 240, 220);')
 
-    def eventFilter(self, obj, event):
-        if (obj is self.viewport()
-                and event.type() == QEvent.Type.MouseButtonPress
-                and event.button() == Qt.MouseButton.LeftButton
-                and self.count() == 0):
-            self.empty_clicked.emit()
-        return super().eventFilter(obj, event)
+        v = QVBoxLayout(self)
+        v.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.count() == 0:
-            painter = QPainter(self.viewport())
-            painter.setPen(QColor('#BBBBBB'))
-            font = self.font()
-            font.setPointSize(11)
-            painter.setFont(font)
-            painter.drawText(
-                self.viewport().rect(),
-                Qt.AlignmentFlag.AlignCenter,
-                self._HINT,
-            )
-            painter.end()
+        lbl = QLabel('核验中，请稍候…')
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet('color: #555555; font-size: 14px; background: transparent;')
+        v.addWidget(lbl)
 
-
-class _FileRow(QWidget):
-    removed = Signal(QListWidgetItem)
-    _SEP_NORMAL = QColor('#E8E6E0')
-    _SEP_HOVER  = QColor('#1A1A1A')
-
-    def __init__(self, path: str, item: QListWidgetItem, parent=None):
-        super().__init__(parent)
-        self._item = item
-        self._hovered = False
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 8, 6)
-        layout.setSpacing(8)
-
-        icon = QLabel('📄')
-        icon.setFixedWidth(18)
-        layout.addWidget(icon)
-
-        name = QLabel(Path(path).name)
-        name.setObjectName('fileItemName')
-        name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        layout.addWidget(name, 1)
-
-        btn = QPushButton('×')
-        btn.setObjectName('fileItemRemove')
-        btn.setFixedSize(20, 20)
-        btn.clicked.connect(lambda: self.removed.emit(self._item))
-        layout.addWidget(btn)
-
-    def event(self, e: QEvent) -> bool:
-        if e.type() == QEvent.Type.HoverEnter:
-            self._hovered = True
-            self.update()
-        elif e.type() == QEvent.Type.HoverLeave:
-            self._hovered = False
-            self.update()
-        return super().event(e)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        color = self._SEP_HOVER if self._hovered else self._SEP_NORMAL
-        painter.setPen(QPen(color, 1))
-        y = self.height() - 1
-        painter.drawLine(10, y, self.width() - 10, y)
-        painter.end()
+        self.hide()
 
 
 # ── field mapping widgets ─────────────────────────────────────────────────────
@@ -373,9 +273,9 @@ class _FieldRow(QWidget):
     clicked_field = Signal(str)
     remove_mapping = Signal(str)
 
-    def __init__(self, field: str, parent=None):
+    def __init__(self, tag: str, display: str, parent=None):
         super().__init__(parent)
-        self._field = field
+        self._field = tag
         self.setObjectName('fieldRow')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -383,7 +283,7 @@ class _FieldRow(QWidget):
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(6)
 
-        name_lbl = QLabel(field)
+        name_lbl = QLabel(display)
         name_lbl.setObjectName('fieldRowName')
         name_lbl.setFixedWidth(180)
         layout.addWidget(name_lbl)
@@ -522,8 +422,7 @@ class _MappingWidget(QWidget):
 
         self.mapping_changed.emit()
 
-    def load_lrmx_fields(self, fields: list[str]):
-        # Clear old field rows
+    def load_lrmx_fields(self, fields: list[tuple[str, str]]):
         while self._fields_vbox.count():
             item = self._fields_vbox.takeAt(0)
             if item.widget():
@@ -533,14 +432,33 @@ class _MappingWidget(QWidget):
         self._reverse.clear()
         self._selected_col = None
 
-        for f in fields:
-            row = _FieldRow(f)
+        for tag, display in fields:
+            row = _FieldRow(tag, display)
             row.clicked_field.connect(self._on_field_clicked)
             row.remove_mapping.connect(self._remove_mapping)
-            self._field_rows[f] = row
+            self._field_rows[tag] = row
             self._fields_vbox.addWidget(row)
         self._fields_vbox.addStretch()
 
+        self.mapping_changed.emit()
+
+    def apply_presets(self, presets: dict[str, list[str]]):
+        """Auto-map excel cols to lrmx fields using alias presets.
+        Only maps where both sides are currently unmapped."""
+        col_set = set(self._tags.keys())
+        for lrmx_tag, aliases in presets.items():
+            if lrmx_tag in self._reverse:
+                continue
+            if lrmx_tag not in self._field_rows:
+                continue
+            for alias in aliases:
+                alias = alias.strip()
+                if alias in col_set and alias not in self._mapping:
+                    self._mapping[alias] = lrmx_tag
+                    self._reverse[lrmx_tag] = alias
+                    self._tags[alias].hide()
+                    self._field_rows[lrmx_tag].set_mapped(alias)
+                    break
         self.mapping_changed.emit()
 
     def _on_tag_clicked(self, col: str):
@@ -678,8 +596,10 @@ class VerifyTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
-        self._scan_worker = None
+        self._settings = QSettings('rmb_helper', 'rmb_helper')
         self._counts = {'ok': 0, 'diff': 0, 'not_found': 0, 'error': 0}
+        self._active_filter: str | None = None
+        self._result_rows: list[_ResultRow] = []
         self._build_ui()
         self.setAcceptDrops(True)
 
@@ -704,45 +624,27 @@ class VerifyTab(QWidget):
         sub.setStyleSheet('color: #888880; font-size: 12px;')
         sp.addWidget(sub)
 
-        # ── lrmx 文件列表 ──────────────────────────────────────────────────
-        list_header = QHBoxLayout()
-        list_header.setContentsMargins(0, 0, 0, 0)
-        list_header.setSpacing(6)
-        list_header.addStretch()
+        # ── 分割器：上方文件面板 / 下方控件 ──────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.setChildrenCollapsible(False)
+        sp.addWidget(splitter, 1)
 
-        add_btn = QPushButton('+ 添加')
-        add_btn.setFixedHeight(26)
-        add_menu = QMenu(add_btn)
-        add_menu.addAction('选择文件…', self._pick_files)
-        add_menu.addAction('选择文件夹…', self._pick_folder)
-        add_btn.setMenu(add_menu)
+        self._file_panel = LrmxFilePanel()
+        splitter.addWidget(self._file_panel)
+        self._file_panel.files_changed.connect(self._on_files_changed)
 
-        del_btn = QPushButton('删除选中')
-        del_btn.setFixedHeight(26)
-        del_btn.clicked.connect(self._remove_selected)
+        bottom_pane = QWidget()
+        bot_layout = QVBoxLayout(bottom_pane)
+        bot_layout.setContentsMargins(0, 0, 0, 0)
+        bot_layout.setSpacing(12)
+        splitter.addWidget(bottom_pane)
 
-        clear_btn = QPushButton('清空')
-        clear_btn.setFixedHeight(26)
-        clear_btn.clicked.connect(self._clear_files)
-
-        list_header.addWidget(add_btn)
-        list_header.addWidget(del_btn)
-        list_header.addWidget(clear_btn)
-        sp.addLayout(list_header)
-
-        self._file_list = _FileList()
-        self._file_list.setObjectName('fileList')
-        self._file_list.setMinimumHeight(80)
-        self._file_list.setMaximumHeight(140)
-        self._file_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        self._file_list.empty_clicked.connect(lambda: add_menu.exec(
-            add_btn.mapToGlobal(add_btn.rect().bottomLeft())
-        ))
-        sp.addWidget(self._file_list)
+        splitter.setSizes([140, 400])
+        splitter.setHandleWidth(4)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
-        sp.addWidget(sep1)
+        bot_layout.addWidget(sep1)
 
         # ── Excel 文件 ─────────────────────────────────────────────────────
         xl_row = QHBoxLayout()
@@ -767,25 +669,25 @@ class VerifyTab(QWidget):
         self._header_spin.setFixedWidth(80)
         self._header_spin.valueChanged.connect(self._reload_excel_headers)
         xl_row.addWidget(self._header_spin)
-        sp.addLayout(xl_row)
+        bot_layout.addLayout(xl_row)
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
-        sp.addWidget(sep2)
+        bot_layout.addWidget(sep2)
 
         # ── 字段匹配 ────────────────────────────────────────────────────────
         map_title = QLabel('字段匹配')
         map_title.setObjectName('sectionTitle')
-        sp.addWidget(map_title)
+        bot_layout.addWidget(map_title)
 
         map_sub = QLabel('点击左侧 Excel 表头选中 → 点击右侧字段完成匹配')
         map_sub.setStyleSheet('color: #888880; font-size: 12px;')
-        sp.addWidget(map_sub)
+        bot_layout.addWidget(map_sub)
 
         self._mapping_widget = _MappingWidget()
-        self._mapping_widget.setMinimumHeight(220)
+        self._mapping_widget.setMinimumHeight(80)
         self._mapping_widget.mapping_changed.connect(self._update_run_btn)
-        sp.addWidget(self._mapping_widget, 1)
+        bot_layout.addWidget(self._mapping_widget, 1)
 
         clear_map_row = QHBoxLayout()
         clear_map_row.addStretch()
@@ -793,11 +695,11 @@ class VerifyTab(QWidget):
         clear_map_btn.setFixedHeight(24)
         clear_map_btn.clicked.connect(self._mapping_widget.clear_all)
         clear_map_row.addWidget(clear_map_btn)
-        sp.addLayout(clear_map_row)
+        bot_layout.addLayout(clear_map_row)
 
         sep3 = QFrame()
         sep3.setFrameShape(QFrame.Shape.HLine)
-        sp.addWidget(sep3)
+        bot_layout.addWidget(sep3)
 
         # ── 匹配依据 + 开始按钮 ─────────────────────────────────────────────
         run_row = QHBoxLayout()
@@ -825,7 +727,7 @@ class VerifyTab(QWidget):
         self._run_btn.setEnabled(False)
         self._run_btn.clicked.connect(self._run)
         run_row.addWidget(self._run_btn)
-        sp.addLayout(run_row)
+        bot_layout.addLayout(run_row)
 
         layout.addWidget(self._setup_panel, 1)
 
@@ -868,6 +770,7 @@ class VerifyTab(QWidget):
         summary_row = QHBoxLayout()
         summary_row.setSpacing(12)
         self._count_labels: dict[str, QLabel] = {}
+        self._card_widgets: dict[str, QWidget] = {}
         cards = [
             ('ok',        '0', '一致'),
             ('diff',      '0', '有差异'),
@@ -876,6 +779,9 @@ class VerifyTab(QWidget):
         ]
         for key, count, desc in cards:
             card = QWidget()
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            card.setObjectName('summaryCard')
+            card.setStyleSheet('border-radius: 4px; padding: 2px;')
             cl = QHBoxLayout(card)
             cl.setContentsMargins(8, 4, 8, 4)
             cl.setSpacing(4)
@@ -886,6 +792,8 @@ class VerifyTab(QWidget):
             cl.addWidget(cnt_lbl)
             cl.addWidget(desc_lbl)
             self._count_labels[key] = cnt_lbl
+            self._card_widgets[key] = card
+            card.mousePressEvent = lambda e, k=key: self._set_result_filter(k)
             summary_row.addWidget(card)
         summary_row.addStretch()
         self._summary_cards_row = summary_row
@@ -905,82 +813,27 @@ class VerifyTab(QWidget):
         self._result_vbox.setSpacing(0)
         self._result_vbox.addStretch()
         result_scroll.setWidget(result_container)
+        result_scroll.hide()
+        self._result_scroll = result_scroll
         layout.addWidget(result_scroll, 1)
 
-    # ── file list helpers ─────────────────────────────────────────────────────
+        self._loading_overlay = _LoadingOverlay(self._result_scroll)
+        self._result_scroll.installEventFilter(self)
 
-    def _add_file(self, path: str):
-        for i in range(self._file_list.count()):
-            if self._file_list.item(i).data(Qt.ItemDataRole.UserRole) == path:
-                return
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, path)
-        item.setSizeHint(QSize(0, 34))
-        self._file_list.addItem(item)
-        row = _FileRow(path, item)
-        row.removed.connect(self._remove_item)
-        self._file_list.setItemWidget(item, row)
-        if self._file_list.count() == 1:
-            self._load_lrmx_fields(path)
+        # Load fixed field list — all widgets now exist
+        self._mapping_widget.load_lrmx_fields(LRMX_FIELDS)
+
+    # ── event filter (overlay resize) ────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        if obj is self._result_scroll and event.type() == QEvent.Type.Resize:
+            self._loading_overlay.resize(self._result_scroll.size())
+        return super().eventFilter(obj, event)
+
+    # ── file panel helpers ────────────────────────────────────────────────────
+
+    def _on_files_changed(self, _files: list[str]):
         self._update_run_btn()
-
-    def _load_lrmx_fields(self, path: str):
-        try:
-            fields = get_lrmx_fields(Path(path))
-            self._mapping_widget.load_lrmx_fields(fields)
-        except Exception:
-            pass
-
-    def _remove_item(self, item: QListWidgetItem):
-        self._file_list.takeItem(self._file_list.row(item))
-        self._update_run_btn()
-
-    def _remove_selected(self):
-        for item in self._file_list.selectedItems():
-            self._file_list.takeItem(self._file_list.row(item))
-        self._update_run_btn()
-
-    def _clear_files(self):
-        self._file_list.clear()
-        self._update_run_btn()
-
-    def _pick_files(self):
-        paths, _ = QFileDialog.getOpenFileNames(
-            self, '选择 lrmx 文件', '', '任免审批表 (*.lrmx)'
-        )
-        for p in paths:
-            self._add_file(p)
-
-    def _pick_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, '选择包含 lrmx 文件的文件夹')
-        if not folder:
-            return
-        dlg = _LoadingDialog(self, '正在扫描文件夹…')
-        self._scan_worker = _FolderScanWorker(folder)
-
-        def _on_done(paths):
-            batch = list(paths)
-            def add_batch():
-                chunk, rest = batch[:20], batch[20:]
-                for p in chunk:
-                    self._add_file(p)
-                batch.clear()
-                batch.extend(rest)
-                if batch:
-                    QTimer.singleShot(0, add_batch)
-                else:
-                    dlg.accept()
-            QTimer.singleShot(0, add_batch)
-
-        self._scan_worker.done.connect(_on_done)
-        self._scan_worker.start()
-        dlg.exec()
-
-    def _files(self) -> list[str]:
-        return [
-            self._file_list.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self._file_list.count())
-        ]
 
     # ── Excel helpers ─────────────────────────────────────────────────────────
 
@@ -1000,14 +853,29 @@ class VerifyTab(QWidget):
             headers = read_excel_headers(Path(path), self._header_spin.value())
             filtered = [h for h in headers if h and h.strip()]
             self._mapping_widget.load_excel_cols(filtered)
+            self._apply_auto_mapping()
         except Exception:
             pass
         self._update_run_btn()
 
+    def _apply_auto_mapping(self):
+        import json
+        raw = self._settings.value('verify_field_aliases', '')
+        if raw:
+            try:
+                stored = json.loads(raw)
+                presets = {tag: [a.strip() for a in csv.split(',') if a.strip()]
+                           for tag, csv in stored.items()}
+            except Exception:
+                presets = DEFAULT_FIELD_ALIASES
+        else:
+            presets = DEFAULT_FIELD_ALIASES
+        self._mapping_widget.apply_presets(presets)
+
     # ── run button state ──────────────────────────────────────────────────────
 
     def _update_run_btn(self):
-        has_files = self._file_list.count() > 0
+        has_files = self._file_panel.count() > 0
         has_excel = bool(self._xl_edit.text())
         mapping = self._mapping_widget.get_mapping()
         has_mapping = bool(mapping)
@@ -1038,7 +906,7 @@ class VerifyTab(QWidget):
     # ── verify ────────────────────────────────────────────────────────────────
 
     def _run(self):
-        files = self._files()
+        files = self._file_panel.files()
         excel_path = self._xl_edit.text()
         mapping = self._mapping_widget.get_mapping()
 
@@ -1074,6 +942,11 @@ class VerifyTab(QWidget):
         self._summary_bar.show()
         self._result_top_sep.show()
         self._summary_cards_widget.show()
+        self._result_scroll.show()
+
+        self._loading_overlay.resize(self._result_scroll.size())
+        self._loading_overlay.raise_()
+        self._loading_overlay.show()
 
         self._worker = _VerifyWorker(handler)
         self._worker.result_ready.connect(self._on_result)
@@ -1081,10 +954,12 @@ class VerifyTab(QWidget):
         self._worker.start()
 
     def _back_to_setup(self):
+        self._loading_overlay.hide()
         self._setup_panel.show()
         self._summary_bar.hide()
         self._result_top_sep.hide()
         self._summary_cards_widget.hide()
+        self._result_scroll.hide()
         self._clear_results()
 
     def _on_result(self, result: PersonResult):
@@ -1093,16 +968,49 @@ class VerifyTab(QWidget):
         self._count_labels[status].setText(str(self._counts[status]))
 
         row_widget = _ResultRow(result)
+        self._result_rows.append(row_widget)
         idx = self._result_vbox.count() - 1
         self._result_vbox.insertWidget(idx, row_widget)
 
     def _on_finished(self):
-        pass  # run button is hidden during results view; nothing to re-enable
+        QTimer.singleShot(400, self._loading_overlay.hide)
+
+    def _set_result_filter(self, key: str):
+        if self._active_filter == key:
+            self._active_filter = None
+        else:
+            self._active_filter = key
+
+        for k, card in self._card_widgets.items():
+            if self._active_filter == k:
+                card.setStyleSheet(
+                    'background: #EEF3FF; border: 1.5px solid #7090C8; border-radius: 4px;'
+                )
+            else:
+                card.setStyleSheet('border-radius: 4px; padding: 2px;')
+
+        # Show overlay first so it paints before the row show/hide triggers layout
+        self._loading_overlay.resize(self._result_scroll.size())
+        self._loading_overlay.raise_()
+        self._loading_overlay.show()
+        QTimer.singleShot(0, self._apply_result_filter)
+
+    def _apply_result_filter(self):
+        for row in self._result_rows:
+            if self._active_filter is None:
+                row.show()
+            else:
+                row.setVisible(row._result.status == self._active_filter)
+        QTimer.singleShot(300, self._loading_overlay.hide)
 
     def _clear_results(self):
         self._counts = {'ok': 0, 'diff': 0, 'not_found': 0, 'error': 0}
+        self._result_rows = []
+        self._active_filter = None
         for key, lbl in self._count_labels.items():
             lbl.setText('0')
+        for card in self._card_widgets.values():
+            card.setStyleSheet('border-radius: 4px; padding: 2px;')
         while self._result_vbox.count() > 1:
             item = self._result_vbox.takeAt(0)
             if item.widget():
@@ -1118,4 +1026,4 @@ class VerifyTab(QWidget):
         for url in event.mimeData().urls():
             path = url.toLocalFile()
             if path.lower().endswith('.lrmx'):
-                self._add_file(path)
+                self._file_panel.add_file(path)

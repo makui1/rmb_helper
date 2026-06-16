@@ -21,8 +21,73 @@ _INVIS = re.compile(
 )
 
 _EXCLUDED_FIELDS = {'version'}
-# Tags that are containers (non-scalar) — exclude from flat field list
 _CONTAINER_TAGS = {'JiaTingChengYuan'}
+
+# ── static field registry ─────────────────────────────────────────────────────
+
+LRMX_FIELDS: list[tuple[str, str]] = [
+    ('XingMing',                              '姓名'),
+    ('XingBie',                               '性别'),
+    ('ChuShengNianYue',                       '出生年月'),
+    ('MinZu',                                 '民族'),
+    ('JiGuan',                                '籍贯'),
+    ('ChuShengDi',                            '出生地'),
+    ('RuDangShiJian',                         '入党时间'),
+    ('CanJiaGongZuoShiJian',                  '参加工作时间'),
+    ('DaoLingNianYue',                        '到龄年月'),
+    ('JianKangZhuangKuang',                   '健康状况'),
+    ('ZhuanYeJiShuZhiWu',                     '专业技术职务'),
+    ('ShuXiZhuanYeYouHeZhuanChang',           '熟悉专业有何专长'),
+    ('QuanRiZhiJiaoYu_XueLi',                '全日制学历'),
+    ('QuanRiZhiJiaoYu_XueWei',               '全日制学位'),
+    ('QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi', '全日制学历毕业院校'),
+    ('QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi','全日制学位毕业院校'),
+    ('ZaiZhiJiaoYu_XueLi',                   '在职学历'),
+    ('ZaiZhiJiaoYu_XueWei',                  '在职学位'),
+    ('ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',   '在职学历毕业院校'),
+    ('ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',  '在职学位毕业院校'),
+    ('XianRenZhiWu',                          '现任职务'),
+    ('NiRenZhiWu',                            '拟任职务'),
+    ('NiMianZhiWu',                           '拟免职务'),
+    ('JianLi',                                '简历'),
+    ('JiangChengQingKuang',                   '奖惩情况'),
+    ('NianDuKaoHeJieGuo',                     '年度考核结果'),
+    ('RenMianLiYou',                          '任免理由'),
+    ('ChengBaoDanWei',                        '呈报单位'),
+    ('GaiGeQianRenZhiNianLingJieXian',        '改革前任职年龄界限'),
+    ('JiSuanNianLingShiJian',                 '计算年龄时间'),
+    ('TianBiaoShiJian',                       '填表时间'),
+    ('TianBiaoRen',                           '填表人'),
+    ('ShenFenZheng',                          '身份证号'),
+]
+
+# Default Excel column aliases for each lrmx field.
+# The verify tab uses these to auto-map when headers are loaded.
+DEFAULT_FIELD_ALIASES: dict[str, list[str]] = {
+    'XingMing':                              ['姓名', '名字', '干部姓名'],
+    'XingBie':                               ['性别'],
+    'ChuShengNianYue':                       ['出生年月', '出生日期', '出生年月日'],
+    'MinZu':                                 ['民族'],
+    'JiGuan':                                ['籍贯'],
+    'ChuShengDi':                            ['出生地'],
+    'ShenFenZheng':                          ['身份证号', '身份证', '证件号码', '证件号', '身份证号码'],
+    'RuDangShiJian':                         ['入党时间', '入党日期', '入党年月'],
+    'CanJiaGongZuoShiJian':                  ['参加工作时间', '参工时间', '参加工作日期', '参加工作年月'],
+    'DaoLingNianYue':                        ['到龄年月', '到龄日期'],
+    'JianKangZhuangKuang':                   ['健康状况', '健康'],
+    'ZhuanYeJiShuZhiWu':                     ['专业技术职务', '技术职务', '专技职务'],
+    'QuanRiZhiJiaoYu_XueLi':                ['全日制学历', '学历', '最高学历'],
+    'QuanRiZhiJiaoYu_XueWei':               ['全日制学位', '学位', '最高学位'],
+    'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi': ['全日制学历毕业院校', '毕业院校'],
+    'ZaiZhiJiaoYu_XueLi':                   ['在职学历'],
+    'ZaiZhiJiaoYu_XueWei':                  ['在职学位'],
+    'XianRenZhiWu':                          ['现任职务', '职务', '现职务'],
+    'NiRenZhiWu':                            ['拟任职务'],
+    'NiMianZhiWu':                           ['拟免职务'],
+    'RenMianLiYou':                          ['任免理由'],
+    'TianBiaoRen':                           ['填表人'],
+    'ChengBaoDanWei':                        ['呈报单位', '单位'],
+}
 
 
 def _strip(s: str) -> str:
@@ -39,20 +104,6 @@ def read_excel_headers(path: Path, header_row: int = 1) -> list[str]:
             return [str(c) if c is not None else '' for c in row]
     wb.close()
     return []
-
-
-def get_lrmx_fields(path: Path) -> list[str]:
-    """Return all direct-child tag names from an lrmx file,
-    excluding 'version' and container tags."""
-    root = ET.parse(str(path)).getroot()
-    seen: list[str] = []
-    for elem in root:
-        tag = elem.tag
-        if tag in _EXCLUDED_FIELDS or tag in _CONTAINER_TAGS:
-            continue
-        if tag not in seen:
-            seen.append(tag)
-    return seen
 
 
 def char_diff_html(a: str, b: str) -> tuple[str, str]:
