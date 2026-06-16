@@ -11,9 +11,9 @@ class MatchMode:
 
 
 class ExcelHandler:
-    def __init__(self, excel_path: Path, lrmx_dir: Path, match_mode: str) -> None:
+    def __init__(self, excel_path: Path, lrmx_files: list, match_mode: str) -> None:
         self.excel_path = Path(excel_path)
-        self.lrmx_dir = Path(lrmx_dir)
+        self.lrmx_files = [Path(f) for f in lrmx_files]
         self.match_mode = match_mode
 
     def _make_key(self, lf: LrmxFile) -> str:
@@ -32,7 +32,7 @@ class ExcelHandler:
 
     def _load_index(self) -> dict[str, LrmxFile]:
         index: dict[str, LrmxFile] = {}
-        for f in self.lrmx_dir.glob('*.lrmx'):
+        for f in self.lrmx_files:
             try:
                 lf = LrmxFile(f)
                 key = self._make_key(lf)

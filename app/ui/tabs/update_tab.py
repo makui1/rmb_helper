@@ -1,12 +1,12 @@
 from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QRadioButton, QButtonGroup,
-    QListWidget, QListWidgetItem, QTextEdit, QFileDialog, QFrame,
+    QPushButton, QListWidget, QListWidgetItem, QLineEdit,
+    QRadioButton, QButtonGroup, QTextEdit, QFileDialog,
+    QSizePolicy, QMenu, QDialog, QProgressBar, QFrame,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize
-from PySide6.QtGui import QIcon
-import openpyxl
+from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
 
 from app.core.excel_handler import ExcelHandler, MatchMode
 
@@ -25,33 +25,168 @@ FIELD_LABELS: dict[str, str] = {
 }
 
 
+# ── background workers ────────────────────────────────────────────────────────
+
+class _FolderScanWorker(QThread):
+    done = Signal(list)
+
+    def __init__(self, folder: str, parent=None):
+        super().__init__(parent)
+        self._folder = folder
+
+    def run(self):
+        paths = sorted(str(p) for p in Path(self._folder).rglob('*.lrmx'))
+        self.done.emit(paths)
+
+
 class _Worker(QThread):
     log = Signal(str)
     finished = Signal()
 
-    def __init__(self, excel_path, lrmx_dir, match_mode, fields):
+    def __init__(self, excel_path, lrmx_files, match_mode, fields):
         super().__init__()
         self.excel_path = excel_path
-        self.lrmx_dir = lrmx_dir
+        self.lrmx_files = lrmx_files
         self.match_mode = match_mode
         self.fields = fields
 
     def run(self):
         try:
-            handler = ExcelHandler(self.excel_path, self.lrmx_dir, self.match_mode)
+            handler = ExcelHandler(self.excel_path, self.lrmx_files, self.match_mode)
             handler.update(self.fields, progress_cb=self.log.emit)
         except Exception as e:
             self.log.emit(f'✗ 错误: {e}')
         self.finished.emit()
 
 
+# ── shared list widgets ───────────────────────────────────────────────────────
+
+class _LoadingDialog(QDialog):
+    def __init__(self, parent, message: str = '正在扫描，请稍候…'):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setModal(True)
+        self.setObjectName('loadingDialog')
+        self.setFixedSize(260, 90)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 20, 28, 20)
+        layout.setSpacing(12)
+
+        lbl = QLabel(message)
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setObjectName('loadingLabel')
+        layout.addWidget(lbl)
+
+        bar = QProgressBar()
+        bar.setRange(0, 0)
+        bar.setFixedHeight(4)
+        bar.setTextVisible(False)
+        bar.setObjectName('loadingBar')
+        layout.addWidget(bar)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.parent():
+            pg = self.parent().frameGeometry()
+            self.move(
+                pg.center().x() - self.width() // 2,
+                pg.center().y() - self.height() // 2,
+            )
+
+
+class _FileList(QListWidget):
+    empty_clicked = Signal()
+    _HINT = '拖放 .lrmx 文件至此，或点击「添加」'
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.viewport().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if (obj is self.viewport()
+                and event.type() == QEvent.Type.MouseButtonPress
+                and event.button() == Qt.MouseButton.LeftButton
+                and self.count() == 0):
+            self.empty_clicked.emit()
+        return super().eventFilter(obj, event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.count() == 0:
+            painter = QPainter(self.viewport())
+            painter.setPen(QColor('#BBBBBB'))
+            font = self.font()
+            font.setPointSize(11)
+            painter.setFont(font)
+            painter.drawText(
+                self.viewport().rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                self._HINT,
+            )
+            painter.end()
+
+
+class _FileRow(QWidget):
+    removed = Signal(QListWidgetItem)
+    _SEP_NORMAL = QColor('#E8E6E0')
+    _SEP_HOVER  = QColor('#1A1A1A')
+
+    def __init__(self, path: str, item: QListWidgetItem, parent=None):
+        super().__init__(parent)
+        self._item = item
+        self._hovered = False
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 8, 6)
+        layout.setSpacing(8)
+
+        icon = QLabel('📄')
+        icon.setFixedWidth(18)
+        layout.addWidget(icon)
+
+        name = QLabel(Path(path).name)
+        name.setObjectName('fileItemName')
+        name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(name, 1)
+
+        btn = QPushButton('×')
+        btn.setObjectName('fileItemRemove')
+        btn.setFixedSize(20, 20)
+        btn.clicked.connect(lambda: self.removed.emit(self._item))
+        layout.addWidget(btn)
+
+    def event(self, e: QEvent) -> bool:
+        if e.type() == QEvent.Type.HoverEnter:
+            self._hovered = True
+            self.update()
+        elif e.type() == QEvent.Type.HoverLeave:
+            self._hovered = False
+            self.update()
+        return super().event(e)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        color = self._SEP_HOVER if self._hovered else self._SEP_NORMAL
+        painter.setPen(QPen(color, 1))
+        y = self.height() - 1
+        painter.drawLine(10, y, self.width() - 10, y)
+        painter.end()
+
+
+# ── tab widget ────────────────────────────────────────────────────────────────
+
 class UpdateTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
+        self._scan_worker = None
         self._log_entries: list[tuple[str, str]] = []
         self._active_filter = 'all'
         self._build_ui()
+        self.setAcceptDrops(True)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -66,21 +201,44 @@ class UpdateTab(QWidget):
         sub.setStyleSheet('color: #888880; font-size: 12px;')
         layout.addWidget(sub)
 
-        # ── lrmx 目录 ──────────────────────────────────────────────────────────
-        dir_row = QHBoxLayout()
-        dir_label = QLabel('lrmx 目录')
-        dir_label.setFixedWidth(72)
-        self._dir_edit = QLineEdit()
-        self._dir_edit.setReadOnly(True)
-        self._dir_edit.setPlaceholderText('包含 .lrmx 文件的目录…')
-        dir_btn = QPushButton('浏览')
-        dir_btn.setIcon(QIcon(str(_ASSETS / 'folder.svg')))
-        dir_btn.setIconSize(QSize(15, 15))
-        dir_btn.clicked.connect(self._pick_dir)
-        dir_row.addWidget(dir_label)
-        dir_row.addWidget(self._dir_edit)
-        dir_row.addWidget(dir_btn)
-        layout.addLayout(dir_row)
+        # ── lrmx 文件列表 ───────────────────────────────────────────────────────
+        list_header = QHBoxLayout()
+        list_header.setContentsMargins(0, 0, 0, 0)
+        list_header.setSpacing(6)
+        list_header.addStretch()
+
+        add_btn = QPushButton('+ 添加')
+        add_btn.setFixedHeight(26)
+        add_menu = QMenu(add_btn)
+        add_menu.addAction('选择文件…', self._pick_files)
+        add_menu.addAction('选择文件夹…', self._pick_folder)
+        add_btn.setMenu(add_menu)
+
+        del_btn = QPushButton('删除选中')
+        del_btn.setFixedHeight(26)
+        del_btn.clicked.connect(self._remove_selected)
+
+        clear_btn = QPushButton('清空')
+        clear_btn.setFixedHeight(26)
+        clear_btn.clicked.connect(self._clear_files)
+
+        list_header.addWidget(add_btn)
+        list_header.addWidget(del_btn)
+        list_header.addWidget(clear_btn)
+        layout.addLayout(list_header)
+
+        self._file_list = _FileList()
+        self._file_list.setObjectName('fileList')
+        self._file_list.setMinimumHeight(100)
+        self._file_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self._file_list.empty_clicked.connect(lambda: add_menu.exec(
+            add_btn.mapToGlobal(add_btn.rect().bottomLeft())
+        ))
+        layout.addWidget(self._file_list)
+
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep1)
 
         # ── Excel 文件 ─────────────────────────────────────────────────────────
         xl_row = QHBoxLayout()
@@ -119,9 +277,9 @@ class UpdateTab(QWidget):
         match_row.addStretch()
         layout.addLayout(match_row)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep)
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep2)
 
         # ── 更新字段多选 ───────────────────────────────────────────────────────
         field_header = QHBoxLayout()
@@ -196,12 +354,81 @@ class UpdateTab(QWidget):
         for i in range(self._field_list.count()):
             self._field_list.item(i).setCheckState(Qt.CheckState.Unchecked)
 
-    # ── file pickers ──────────────────────────────────────────────────────────
+    # ── file list helpers ─────────────────────────────────────────────────────
 
-    def _pick_dir(self):
-        d = QFileDialog.getExistingDirectory(self, '选择 lrmx 文件目录')
-        if d:
-            self._dir_edit.setText(d)
+    def _add_file(self, path: str):
+        for i in range(self._file_list.count()):
+            if self._file_list.item(i).data(Qt.ItemDataRole.UserRole) == path:
+                return
+        item = QListWidgetItem()
+        item.setData(Qt.ItemDataRole.UserRole, path)
+        item.setSizeHint(QSize(0, 34))
+        self._file_list.addItem(item)
+        row = _FileRow(path, item)
+        row.removed.connect(self._remove_item)
+        self._file_list.setItemWidget(item, row)
+
+    def _remove_item(self, item: QListWidgetItem):
+        self._file_list.takeItem(self._file_list.row(item))
+
+    def _remove_selected(self):
+        for item in self._file_list.selectedItems():
+            self._file_list.takeItem(self._file_list.row(item))
+
+    def _clear_files(self):
+        self._file_list.clear()
+
+    def _pick_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, '选择 lrmx 文件', '', '任免审批表 (*.lrmx)'
+        )
+        for p in paths:
+            self._add_file(p)
+
+    def _pick_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, '选择包含 lrmx 文件的文件夹')
+        if not folder:
+            return
+        dlg = _LoadingDialog(self, '正在扫描文件夹…')
+        self._scan_worker = _FolderScanWorker(folder)
+
+        def _on_done(paths):
+            batch = list(paths)
+            def add_batch():
+                chunk, rest = batch[:20], batch[20:]
+                for p in chunk:
+                    self._add_file(p)
+                batch.clear()
+                batch.extend(rest)
+                if batch:
+                    QTimer.singleShot(0, add_batch)
+                else:
+                    dlg.accept()
+            QTimer.singleShot(0, add_batch)
+
+        self._scan_worker.done.connect(_on_done)
+        self._scan_worker.start()
+        dlg.exec()
+
+    def _files(self) -> list[str]:
+        return [
+            self._file_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self._file_list.count())
+        ]
+
+    # ── drag & drop ───────────────────────────────────────────────────────────
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent):
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith('.lrmx'):
+                self._add_file(path)
+
+    # ── Excel picker ──────────────────────────────────────────────────────────
 
     def _pick_excel(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -213,11 +440,11 @@ class UpdateTab(QWidget):
     # ── log helpers ───────────────────────────────────────────────────────────
 
     def _append_log(self, message: str):
-        if message.startswith('✓'):
+        if message.startswith('✓') or message.startswith('已更新'):
             color, kind = '#2e7d32', 'ok'
         elif message.startswith('✗'):
             color, kind = '#c62828', 'error'
-        elif message.startswith('△') or message.startswith('⚠'):
+        elif message.startswith('△') or message.startswith('⚠') or message.startswith('未匹配'):
             color, kind = '#e65100', 'warn'
         else:
             color, kind = '#888880', 'info'
@@ -248,10 +475,14 @@ class UpdateTab(QWidget):
     # ── run ───────────────────────────────────────────────────────────────────
 
     def _run(self):
-        lrmx_dir = self._dir_edit.text()
+        files = self._files()
+        if not files:
+            self._append_log('⚠ 请先添加 lrmx 文件')
+            return
+
         excel_path = self._xl_edit.text()
-        if not lrmx_dir or not excel_path:
-            self._append_log('⚠ 请选择 lrmx 目录和 Excel 文件')
+        if not excel_path:
+            self._append_log('⚠ 请选择 Excel 文件')
             return
 
         fields = [
@@ -274,7 +505,7 @@ class UpdateTab(QWidget):
         self._log.clear()
         self._log_entries.clear()
 
-        self._worker = _Worker(excel_path, lrmx_dir, match_mode, fields)
+        self._worker = _Worker(excel_path, files, match_mode, fields)
         self._worker.log.connect(self._append_log)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
