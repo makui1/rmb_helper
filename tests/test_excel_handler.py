@@ -17,50 +17,122 @@ def make_excel(path: Path, rows: list[dict]) -> Path:
 
 
 def test_update_by_id_card(sample_lrmx, tmp_path):
+    """Excel 列名不同于 lrmx 字段名时，通过 field_mapping 正确写入"""
     excel = make_excel(tmp_path / 'data.xlsx', [
-        {'ShenFenZheng': '110101199001011234', 'XianRenZhiWu': '副科长'},
+        {'证件号': '110101199001011234', '现任职务': '副科长'},
     ])
-    lrmx_dir = sample_lrmx.parent
-    handler = ExcelHandler(excel, lrmx_dir, MatchMode.ID_CARD)
-    logs = handler.update(['XianRenZhiWu'])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
+    logs = handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],
+        match_excel_col_for_id='证件号',
+    )
     assert any('张三' in log for log in logs)
+    assert any('✓' in log for log in logs)
     updated = LrmxFile(sample_lrmx)
     assert updated.get('XianRenZhiWu') == '副科长'
 
 
 def test_backup_created_before_update(sample_lrmx, tmp_path):
     excel = make_excel(tmp_path / 'data.xlsx', [
-        {'ShenFenZheng': '110101199001011234', 'XianRenZhiWu': '副科长'},
+        {'证件号': '110101199001011234', '现任职务': '副科长'},
     ])
-    handler = ExcelHandler(excel, sample_lrmx.parent, MatchMode.ID_CARD)
-    handler.update(['XianRenZhiWu'])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
+    handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],
+        match_excel_col_for_id='证件号',
+    )
     assert sample_lrmx.with_suffix('.lrmx.bak').exists()
 
 
-def test_unmatched_row_logged(sample_lrmx, tmp_path):
+def test_unmatched_lrmx_logged(sample_lrmx, tmp_path):
+    """名册中没有对应记录时，日志显示 △ 未匹配"""
     excel = make_excel(tmp_path / 'data.xlsx', [
-        {'ShenFenZheng': '000000000000000000', 'XianRenZhiWu': '局长'},
+        {'证件号': '000000000000000000', '现任职务': '局长'},
     ])
-    handler = ExcelHandler(excel, sample_lrmx.parent, MatchMode.ID_CARD)
-    logs = handler.update(['XianRenZhiWu'])
-    assert any('未匹配' in log for log in logs)
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
+    logs = handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],
+        match_excel_col_for_id='证件号',
+    )
+    assert any('△' in log for log in logs)
+    assert any('未在名册中找到' in log for log in logs)
 
 
 def test_update_by_name(sample_lrmx, tmp_path):
     excel = make_excel(tmp_path / 'data.xlsx', [
-        {'XingMing': '张三', 'JianKangZhuangKuang': '良好'},
+        {'姓名': '张三', '健康状况': '良好'},
     ])
-    handler = ExcelHandler(excel, sample_lrmx.parent, MatchMode.NAME)
-    handler.update(['JianKangZhuangKuang'])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.NAME)
+    field_mapping = {'姓名': 'XingMing', '健康状况': 'JianKangZhuangKuang'}
+    handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['JianKangZhuangKuang'],
+        match_excel_col_for_name='姓名',
+    )
     updated = LrmxFile(sample_lrmx)
     assert updated.get('JianKangZhuangKuang') == '良好'
 
 
+def test_fields_to_write_subset(sample_lrmx, tmp_path):
+    """fields_to_write 只写入子集，其他已映射字段不写入"""
+    excel = make_excel(tmp_path / 'data.xlsx', [
+        {'证件号': '110101199001011234', '现任职务': '副科长', '姓名': '张三'},
+    ])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {
+        '证件号': 'ShenFenZheng',
+        '现任职务': 'XianRenZhiWu',
+        '姓名': 'XingMing',
+    }
+    handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],  # 只写入现任职务
+        match_excel_col_for_id='证件号',
+    )
+    updated = LrmxFile(sample_lrmx)
+    assert updated.get('XianRenZhiWu') == '副科长'
+    assert updated.get('XingMing') == '张三'  # 原值不变（sample 本来就是张三）
+
+
 def test_progress_callback_called(sample_lrmx, tmp_path):
     excel = make_excel(tmp_path / 'data.xlsx', [
-        {'ShenFenZheng': '110101199001011234', 'XianRenZhiWu': '科长'},
+        {'证件号': '110101199001011234', '现任职务': '科长'},
     ])
-    handler = ExcelHandler(excel, sample_lrmx.parent, MatchMode.ID_CARD)
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
     calls = []
-    handler.update(['XianRenZhiWu'], progress_cb=calls.append)
+    handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],
+        match_excel_col_for_id='证件号',
+        progress_cb=calls.append,
+    )
     assert len(calls) >= 1
+
+
+def test_header_row_param(sample_lrmx, tmp_path):
+    """header_row=2 时跳过第一行"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(['这是说明行，非表头'])
+    ws.append(['证件号', '现任职务'])
+    ws.append(['110101199001011234', '处长'])
+    p = tmp_path / 'data2.xlsx'
+    wb.save(p)
+
+    handler = ExcelHandler(p, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
+    handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],
+        header_row=2,
+        match_excel_col_for_id='证件号',
+    )
+    updated = LrmxFile(sample_lrmx)
+    assert updated.get('XianRenZhiWu') == '处长'
