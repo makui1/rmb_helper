@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (
     QPushButton, QListWidget, QListWidgetItem, QLineEdit,
     QRadioButton, QButtonGroup, QTextEdit, QFileDialog,
     QSizePolicy, QMenu, QDialog, QProgressBar, QFrame,
-    QScrollArea, QSpinBox,
+    QScrollArea, QSpinBox, QLayout,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer
+from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer, QRect, QPoint
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
 
 from app.core.excel_handler import MatchMode
@@ -217,6 +217,69 @@ class _FileRow(QWidget):
 
 # ── field mapping widgets ─────────────────────────────────────────────────────
 
+class _FlowLayout(QLayout):
+    """Left-to-right wrapping flow layout; hidden items are skipped."""
+
+    def __init__(self, parent=None, h_spacing: int = 6, v_spacing: int = 6):
+        super().__init__(parent)
+        self._h = h_spacing
+        self._v = v_spacing
+        self._items: list = []
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, w: int) -> int:
+        return self._arrange(QRect(0, 0, w, 0), dry=True)
+
+    def setGeometry(self, rect: QRect):
+        super().setGeometry(rect)
+        self._arrange(rect, dry=False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        sz = QSize()
+        for item in self._items:
+            sz = sz.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        return sz + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _arrange(self, rect: QRect, dry: bool) -> int:
+        m = self.contentsMargins()
+        r = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x, y, row_h = r.x(), r.y(), 0
+        for item in self._items:
+            w = item.widget()
+            if w is None or not w.isVisible():
+                continue
+            hint = item.sizeHint()
+            nx = x + hint.width() + self._h
+            if nx - self._h > r.right() and row_h > 0:
+                x = r.x()
+                y += row_h + self._v
+                nx = x + hint.width() + self._h
+                row_h = 0
+            if not dry:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = nx
+            row_h = max(row_h, hint.height())
+        return y + row_h - rect.y() + m.bottom()
+
+
 class _MatchTag(QWidget):
     clicked_tag = Signal(str)
 
@@ -225,14 +288,13 @@ class _MatchTag(QWidget):
         self._col = col
         self._selected = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._label = QLabel(col)
         self._label.setObjectName('matchTag')
-        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self._label)
 
     def set_selected(self, v: bool):
@@ -318,27 +380,20 @@ class _MappingWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Left panel — Excel header tags (vertical scroll list)
+        # ── Left panel — Excel header tags (flow layout, equal width) ──────
         left = QWidget()
-        left.setFixedWidth(230)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 10, 0)
         lv.setSpacing(4)
 
-        left_title = QLabel('Excel 表头')
+        left_title = QLabel('Excel 表头  （点击选中）')
         left_title.setObjectName('sectionTitle')
         lv.addWidget(left_title)
 
-        hint_l = QLabel('点击选中，再点右侧字段完成匹配')
-        hint_l.setObjectName('mapHint')
-        hint_l.setWordWrap(True)
-        lv.addWidget(hint_l)
-
+        # Tags container uses flow layout; placed inside a vertical-only scroll area
         self._tags_container = QWidget()
-        self._tags_vbox = QVBoxLayout(self._tags_container)
-        self._tags_vbox.setContentsMargins(0, 0, 0, 0)
-        self._tags_vbox.setSpacing(3)
-        self._tags_vbox.addStretch()
+        self._flow_layout = _FlowLayout(self._tags_container, h_spacing=6, v_spacing=6)
+        self._flow_layout.setContentsMargins(2, 4, 2, 4)
 
         tags_scroll = QScrollArea()
         tags_scroll.setObjectName('tagsScroll')
@@ -346,29 +401,25 @@ class _MappingWidget(QWidget):
         tags_scroll.setWidget(self._tags_container)
         tags_scroll.setFrameShape(QFrame.Shape.NoFrame)
         tags_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tags_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         lv.addWidget(tags_scroll, 1)
 
-        outer.addWidget(left)
+        outer.addWidget(left, 1)  # equal stretch
 
-        # Separator
+        # ── Separator ──────────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
         outer.addWidget(sep)
 
-        # Right panel — lrmx field rows
+        # ── Right panel — lrmx field rows ──────────────────────────────────
         right = QWidget()
         rv = QVBoxLayout(right)
         rv.setContentsMargins(10, 0, 0, 0)
         rv.setSpacing(4)
 
-        right_title = QLabel('任免表字段')
+        right_title = QLabel('任免表字段  （点击接收匹配）')
         right_title.setObjectName('sectionTitle')
         rv.addWidget(right_title)
-
-        hint_r = QLabel('已选中表头后，点击对应字段完成匹配；点击 ✕ 取消匹配')
-        hint_r.setObjectName('mapHint')
-        hint_r.setWordWrap(True)
-        rv.addWidget(hint_r)
 
         self._fields_scroll = QScrollArea()
         self._fields_scroll.setWidgetResizable(True)
@@ -382,11 +433,11 @@ class _MappingWidget(QWidget):
         self._fields_scroll.setWidget(self._fields_container)
         rv.addWidget(self._fields_scroll, 1)
 
-        outer.addWidget(right, 1)
+        outer.addWidget(right, 1)  # equal stretch
 
     def load_excel_cols(self, cols: list[str]):
-        while self._tags_vbox.count():
-            item = self._tags_vbox.takeAt(0)
+        while self._flow_layout.count():
+            item = self._flow_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._tags.clear()
@@ -400,8 +451,9 @@ class _MappingWidget(QWidget):
             tag = _MatchTag(col)
             tag.clicked_tag.connect(self._on_tag_clicked)
             self._tags[col] = tag
-            self._tags_vbox.addWidget(tag)
-        self._tags_vbox.addStretch()
+            self._flow_layout.addWidget(tag)
+
+        self._tags_container.updateGeometry()
 
         for fr in self._field_rows.values():
             fr.set_mapped(None)
