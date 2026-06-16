@@ -59,7 +59,7 @@ class _LoadingDialog(QDialog):
 
 class _FileList(QListWidget):
     empty_clicked = Signal()
-    _HINT = '拖放 .lrmx 文件至此，或点击「添加」'
+    _HINT = '拖放 .lrmx 文件或文件夹至此，或点击「添加」'
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -243,8 +243,10 @@ class LrmxFilePanel(QWidget):
 
     def _pick_folder(self):
         folder = QFileDialog.getExistingDirectory(self, '选择包含 lrmx 文件的文件夹')
-        if not folder:
-            return
+        if folder:
+            self._scan_and_add(folder)
+
+    def _scan_and_add(self, folder: str):
         dlg = _LoadingDialog(self.window(), '正在扫描文件夹…')
         self._scan_worker = _FolderScanWorker(folder)
 
@@ -296,5 +298,7 @@ class LrmxFilePanel(QWidget):
     def dropEvent(self, event: QDropEvent):
         for url in event.mimeData().urls():
             path = url.toLocalFile()
-            if path.lower().endswith('.lrmx'):
+            if Path(path).is_dir():
+                self._scan_and_add(path)
+            elif path.lower().endswith('.lrmx'):
                 self.add_file(path)
