@@ -177,3 +177,29 @@ def test_verify_progress_callback(sample_lrmx, tmp_path):
     handler.verify(progress_cb=calls.append)
     assert len(calls) == 1
     assert isinstance(calls[0], PersonResult)
+
+def test_verify_with_header_row_2(sample_lrmx, tmp_path):
+    """VerifyHandler correctly skips pre-header rows when header_row > 1."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(['ignore this row'])          # row 1
+    ws.append(['身份证', '性别'])             # row 2 = header
+    ws.append(['110101199001011234', '男']) # row 3 = data
+    excel = tmp_path / 'hdr2.xlsx'
+    wb.save(excel)
+    handler = VerifyHandler(
+        excel_path=excel,
+        lrmx_files=[sample_lrmx],
+        match_mode=MatchMode.ID_CARD,
+        header_row=2,
+        field_mapping={'身份证': 'ShenFenZheng', '性别': 'XingBie'},
+        match_excel_col_for_id='身份证',
+        match_excel_col_for_name=None,
+    )
+    results = handler.verify()
+    assert results[0].status == 'ok'
+
+def test_read_excel_headers_out_of_range(tmp_path):
+    make_excel(tmp_path / 'x.xlsx', [{'姓名': '张三'}])
+    headers = read_excel_headers(tmp_path / 'x.xlsx', header_row=99)
+    assert headers == []

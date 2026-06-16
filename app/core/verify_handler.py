@@ -14,7 +14,6 @@ import openpyxl
 from app.core.lrmx import LrmxFile
 from app.core.excel_handler import MatchMode
 
-# Strips all whitespace + Unicode invisible/control characters
 _INVIS = re.compile(
     r'[\x00-\x1f\x7f-\x9f'
     r'​-‏‪-‮⁠-⁤﻿'
