@@ -643,7 +643,7 @@ class VerifyTab(QWidget):
         self._header_spin.setMinimum(1)
         self._header_spin.setMaximum(20)
         self._header_spin.setValue(1)
-        self._header_spin.setFixedWidth(55)
+        self._header_spin.setFixedWidth(80)
         self._header_spin.valueChanged.connect(self._reload_excel_headers)
         xl_row.addWidget(self._header_spin)
         layout.addLayout(xl_row)
@@ -689,6 +689,8 @@ class VerifyTab(QWidget):
         self._match_group.addButton(self._rb_id)
         self._match_group.addButton(self._rb_name)
         self._match_group.addButton(self._rb_both)
+        for rb in (self._rb_id, self._rb_name, self._rb_both):
+            rb.toggled.connect(self._update_run_btn)
         run_row.addWidget(match_label)
         run_row.addWidget(self._rb_id)
         run_row.addSpacing(12)
@@ -845,8 +847,20 @@ class VerifyTab(QWidget):
     def _update_run_btn(self):
         has_files = self._file_list.count() > 0
         has_excel = bool(self._xl_edit.text())
-        has_mapping = bool(self._mapping_widget.get_mapping())
-        self._run_btn.setEnabled(has_files and has_excel and has_mapping)
+        mapping = self._mapping_widget.get_mapping()
+        has_mapping = bool(mapping)
+        id_col, name_col = self._match_excel_cols()
+        if self._rb_id.isChecked():
+            key_ok = id_col is not None
+        elif self._rb_name.isChecked():
+            key_ok = name_col is not None
+        else:
+            key_ok = id_col is not None and name_col is not None
+        self._run_btn.setEnabled(has_files and has_excel and has_mapping and key_ok)
+        if has_mapping and not key_ok:
+            self._run_btn.setToolTip('请将匹配依据对应的字段（身份证/姓名）映射到某个 Excel 列')
+        else:
+            self._run_btn.setToolTip('')
 
     def _match_excel_cols(self) -> tuple[str | None, str | None]:
         mapping = self._mapping_widget.get_mapping()
