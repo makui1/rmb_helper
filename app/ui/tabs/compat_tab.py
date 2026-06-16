@@ -153,13 +153,14 @@ class _CompatWorker(QThread):
     log = Signal(str)
     finished = Signal(int, int)  # processed, total
 
-    def __init__(self, files, male_limit, female_limit, output_dir=None, sibling=False):
+    def __init__(self, files, male_limit, female_limit, output_dir=None, sibling=False, update_daolignianue=True):
         super().__init__()
         self.files = files
         self.male_limit = male_limit
         self.female_limit = female_limit
         self.output_dir = Path(output_dir) if output_dir else None
         self.sibling = sibling
+        self.update_daolignianue = update_daolignianue
 
     def run(self):
         total = len(self.files)
@@ -172,7 +173,7 @@ class _CompatWorker(QThread):
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 out_path = self.output_dir / path.name
             try:
-                status, msg = process_file(path, self.male_limit, self.female_limit, out_path)
+                status, msg = process_file(path, self.male_limit, self.female_limit, out_path, self.update_daolignianue)
                 if status == 'ok':
                     self.log.emit(f'✓ {msg}')
                     processed += 1
@@ -273,6 +274,10 @@ class CompatTab(QWidget):
         female_row.addWidget(female_label)
         female_row.addWidget(self._female_combo, 1)
         layout.addLayout(female_row)
+
+        self._chk_update_daolignianue = QCheckBox('更新到龄年月（不勾选则清空该字段）')
+        self._chk_update_daolignianue.setChecked(True)
+        layout.addWidget(self._chk_update_daolignianue)
 
         # ── 输出选项 ───────────────────────────────────────────────────────────
         self._chk_save_copy = QCheckBox('另存到指定目录（不修改原文件）')
@@ -476,6 +481,7 @@ class CompatTab(QWidget):
             female_limit=self._female_combo.currentText(),
             output_dir=output_dir,
             sibling=not save_copy,
+            update_daolignianue=self._chk_update_daolignianue.isChecked(),
         )
         self._worker.log.connect(self._append_log)
         self._worker.finished.connect(self._on_finished)

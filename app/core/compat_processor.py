@@ -76,6 +76,7 @@ def process_file(
     male_limit: str,
     female_limit: str,
     output_path: Optional[Path] = None,
+    update_daolignianue: bool = True,
 ) -> tuple[str, str]:
     """
     Process a single lrmx file.
@@ -103,11 +104,16 @@ def process_file(
     else:
         return 'error', f'{path.name}：无法识别性别（XingBie={repr(xingbie)}）'
 
-    daolignianue = calc_daolignianue(birth_ym, limit_str)
+    daolignianue = calc_daolignianue(birth_ym, limit_str) if update_daolignianue else ''
 
     lf.set('GaiGeQianRenZhiNianLingJieXian', limit_str)
     lf.set('DaoLingNianYue', daolignianue)
     lf.save(output_path or path)
 
-    calc_note = daolignianue[:4] + '.' + daolignianue[4:] if daolignianue else '暂不计算'
+    if not update_daolignianue:
+        calc_note = '已清空'
+    elif daolignianue:
+        calc_note = daolignianue[:4] + '.' + daolignianue[4:]
+    else:
+        calc_note = '暂不计算'
     return 'ok', f'{path.stem}：{limit_str}，到龄年月 {calc_note}'
