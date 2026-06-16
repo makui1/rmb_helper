@@ -357,4 +357,78 @@ QScrollBar::handle:vertical {{
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
 }}
+
+/* ── 批量核验标签和元素 ──────────────────────────────────────────────── */
+QLabel#matchTag {{
+    background: #1a3a5c;
+    color: #7bb3e8;
+    border: 1px solid #2d5a8e;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 11px;
+}}
+QLabel#matchTag[selected="true"] {{
+    background: #2d5a8e;
+    color: #c8e0ff;
+    border-color: #5ba0e0;
+}}
+QWidget#fieldRow {{
+    background: #242424;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}}
+QWidget#fieldRow:hover {{
+    border-color: #2d5a8e;
+}}
+QWidget#fieldRow[pending="true"] {{
+    border-color: #3a5070;
+}}
+QLabel#fieldRowName {{
+    color: #ccc;
+    font-size: 11px;
+}}
+QLabel#fieldRowMapped {{
+    color: #5db880;
+    font-size: 11px;
+    background: #1a3a24;
+    border: 1px solid #2d6a4f;
+    border-radius: 8px;
+    padding: 1px 6px;
+}}
+QLabel#fieldRowUnmapped {{
+    color: #555;
+    font-size: 11px;
+    font-style: italic;
+}}
+QWidget#summaryCard {{
+    background: #1e1e1e;
+    border: 1px solid #2a2a2a;
+    border-radius: 5px;
+}}
+QWidget#resultRowHeader:hover {{
+    background: #1e2530;
+}}
+QLabel#resultArrow {{
+    color: #555;
+    font-size: 11px;
+}}
+QLabel#resultName {{
+    color: #ccc;
+    font-weight: 600;
+}}
+QTextEdit#diffDetail {{
+    background: #111518;
+    border: none;
+    border-radius: 0;
+    font-size: 12px;
+}}
+QFrame#resultSep {{
+    color: #1e1e1e;
+    background: #1e1e1e;
+    max-height: 1px;
+}}
+QScrollArea#resultScroll {{
+    border: none;
+    background: transparent;
+}}
 """
