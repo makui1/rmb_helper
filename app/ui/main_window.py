@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStackedWidget, QFrame,
 )
-from PySide6.QtCore import Qt, QPoint, QSize
+from PySide6.QtCore import Qt, QPoint, QRect, QSize
 from PySide6.QtGui import QIcon
 
 from app.ui.style import QSS
@@ -20,6 +20,7 @@ class _TitleBar(QWidget):
         super().__init__(window)
         self._win = window
         self._drag_pos: QPoint | None = None
+        self._drag_from_maximized: bool = False
         self.setFixedHeight(30)
         self.setObjectName('titleBar')
 
@@ -59,46 +60,76 @@ class _TitleBar(QWidget):
         layout.addWidget(title_label)
         layout.addStretch(1)
 
-        # ── 右侧：最小化 + 关闭
-        for icon_file, slot, obj in [
-            ('minimize.svg', window.showMinimized, 'winBtn'),
-            ('close.svg',    window.close,         'winBtnClose'),
-        ]:
-            btn = QPushButton()
-            btn.setIcon(QIcon(str(_ASSETS / icon_file)))
-            btn.setIconSize(QSize(16, 16))
-            btn.setObjectName(obj)
-            btn.setFixedSize(32, 26)
-            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            btn.clicked.connect(slot)
-            layout.addWidget(btn)
+        # ── 右侧：最小化 + 最大化/还原 + 关闭
+        min_btn = QPushButton()
+        min_btn.setIcon(QIcon(str(_ASSETS / 'minimize.svg')))
+        min_btn.setIconSize(QSize(16, 16))
+        min_btn.setObjectName('winBtn')
+        min_btn.setFixedSize(32, 26)
+        min_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        min_btn.clicked.connect(window.showMinimized)
+        layout.addWidget(min_btn)
+
+        self._max_btn = QPushButton()
+        self._max_btn.setIcon(QIcon(str(_ASSETS / 'maximize.svg')))
+        self._max_btn.setIconSize(QSize(16, 16))
+        self._max_btn.setObjectName('winBtn')
+        self._max_btn.setFixedSize(32, 26)
+        self._max_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._max_btn.clicked.connect(window.toggle_maximize)
+        layout.addWidget(self._max_btn)
+
+        close_btn = QPushButton()
+        close_btn.setIcon(QIcon(str(_ASSETS / 'close.svg')))
+        close_btn.setIconSize(QSize(16, 16))
+        close_btn.setObjectName('winBtnClose')
+        close_btn.setFixedSize(32, 26)
+        close_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        close_btn.clicked.connect(window.close)
+        layout.addWidget(close_btn)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = (
                 event.globalPosition().toPoint() - self._win.frameGeometry().topLeft()
             )
+            self._drag_from_maximized = self._win._pseudo_maximized
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._drag_pos and event.buttons() == Qt.MouseButton.LeftButton:
-            self._win.move(event.globalPosition().toPoint() - self._drag_pos)
+        if self._drag_pos is None or event.buttons() != Qt.MouseButton.LeftButton:
+            super().mouseMoveEvent(event)
+            return
+        global_pos = event.globalPosition().toPoint()
+        if self._drag_from_maximized:
+            # Restore and recompute drag offset so cursor stays at the same
+            # horizontal ratio within the restored title bar.
+            ratio = self._drag_pos.x() / max(self._win.width(), 1)
+            self._win.toggle_maximize()
+            self._drag_pos = QPoint(
+                int(ratio * self._win.width()),
+                self._drag_pos.y(),
+            )
+            self._drag_from_maximized = False
+        self._win.move(global_pos - self._drag_pos)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         self._drag_pos = None
+        self._drag_from_maximized = False
         super().mouseReleaseEvent(event)
 
     def set_collapsed(self, collapsed: bool):
         icon_file = 'unfold.svg' if collapsed else 'collapse.svg'
         self._toggle_btn.setIcon(QIcon(str(_ASSETS / icon_file)))
 
+    def set_maximized(self, is_max: bool):
+        icon_file = 'unmaximize.svg' if is_max else 'maximize.svg'
+        self._max_btn.setIcon(QIcon(str(_ASSETS / icon_file)))
+
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self._win.isMaximized():
-                self._win.showNormal()
-            else:
-                self._win.showMaximized()
+            self._win.toggle_maximize()
         super().mouseDoubleClickEvent(event)
 
 
@@ -112,6 +143,8 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(QSS)
         self._sidebar_container: QWidget | None = None
         self._title_bar: _TitleBar | None = None
+        self._pseudo_maximized: bool = False
+        self._restore_geometry: QRect | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -181,6 +214,18 @@ class MainWindow(QMainWindow):
         root.addWidget(body)
 
         self._switch_tab(0)
+
+    def toggle_maximize(self):
+        if self._pseudo_maximized:
+            if self._restore_geometry:
+                self.setGeometry(self._restore_geometry)
+            self._pseudo_maximized = False
+        else:
+            self._restore_geometry = self.geometry()
+            self.setGeometry(self.screen().availableGeometry())
+            self._pseudo_maximized = True
+        if self._title_bar:
+            self._title_bar.set_maximized(self._pseudo_maximized)
 
     def toggle_sidebar(self):
         if self._sidebar_container:
