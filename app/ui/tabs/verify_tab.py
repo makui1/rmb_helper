@@ -747,7 +747,6 @@ class VerifyTab(QWidget):
         self._counts = {'ok': 0, 'diff': 0, 'not_found': 0, 'error': 0}
         self._active_filter: str | None = None
         self._result_rows: list[_ResultRow] = []
-        self._mode: str = 'verify'
         self._update_counts = {'ok': 0, 'not_found': 0, 'error': 0}
         self._update_log_rows: list[_UpdateLogRow] = []
         self._update_active_filter: str | None = None
@@ -1001,7 +1000,7 @@ class VerifyTab(QWidget):
         layout.addWidget(result_scroll, 1)
 
         # ══════════════════════════════════════════════════════════════════════
-        # 更新结果区（与核验结果区互斥，_mode 决定显示哪个）
+        # 更新结果区（与核验结果区互斥）
         # ══════════════════════════════════════════════════════════════════════
         self._update_filter_row = QWidget()
         self._update_filter_row.hide()
@@ -1186,6 +1185,8 @@ class VerifyTab(QWidget):
         self._worker.start()
 
     def _run_update(self):
+        if self._update_worker and self._update_worker.isRunning():
+            return
         files = self._file_panel.files()
         excel_path = self._xl_edit.text()
         mapping = self._mapping_widget.get_mapping()  # {excel_col: lrmx_field}
@@ -1215,7 +1216,6 @@ class VerifyTab(QWidget):
         from app.core.excel_handler import ExcelHandler
         handler = ExcelHandler(excel_path, files, match_mode)
 
-        self._mode = 'update'
         self._clear_update_results()
 
         xl_name = Path(excel_path).name
@@ -1326,7 +1326,6 @@ class VerifyTab(QWidget):
         self._update_scroll.hide()
         self._clear_results()
         self._clear_update_results()
-        self._mode = 'verify'
 
     def _on_result(self, result: PersonResult):
         status = result.status if result.status in self._counts else 'error'
