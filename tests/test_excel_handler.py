@@ -174,3 +174,34 @@ def test_validation_id_col_required(sample_lrmx, tmp_path):
             fields_to_write=['XianRenZhiWu'],
             # match_excel_col_for_id intentionally omitted
         )
+
+
+def test_validation_name_col_required(sample_lrmx, tmp_path):
+    """NAME 模式未提供 match_excel_col_for_name 应抛出 ValueError"""
+    excel = make_excel(tmp_path / 'data.xlsx', [
+        {'姓名': '张三', '健康状况': '良好'},
+    ])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.NAME)
+    field_mapping = {'姓名': 'XingMing', '健康状况': 'JianKangZhuangKuang'}
+    with pytest.raises(ValueError, match='match_excel_col_for_name'):
+        handler.update(
+            field_mapping=field_mapping,
+            fields_to_write=['JianKangZhuangKuang'],
+            # match_excel_col_for_name intentionally omitted
+        )
+
+
+def test_validation_name_and_id_cols_required(sample_lrmx, tmp_path):
+    """NAME_AND_ID 模式未提供任一列名应抛出 ValueError"""
+    excel = make_excel(tmp_path / 'data.xlsx', [
+        {'证件号': '110101199001011234', '姓名': '张三', '健康状况': '良好'},
+    ])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.NAME_AND_ID)
+    field_mapping = {'证件号': 'ShenFenZheng', '姓名': 'XingMing', '健康状况': 'JianKangZhuangKuang'}
+    with pytest.raises(ValueError):
+        handler.update(
+            field_mapping=field_mapping,
+            fields_to_write=['JianKangZhuangKuang'],
+            match_excel_col_for_id='证件号',
+            # match_excel_col_for_name intentionally omitted
+        )
