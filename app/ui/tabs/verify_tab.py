@@ -225,13 +225,14 @@ class _MatchTag(QWidget):
         self._col = col
         self._selected = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._label = QLabel(col)
         self._label.setObjectName('matchTag')
+        self._label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self._label)
 
     def set_selected(self, v: bool):
@@ -317,29 +318,35 @@ class _MappingWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Left panel
+        # Left panel — Excel header tags (vertical scroll list)
         left = QWidget()
-        left.setFixedWidth(200)
+        left.setFixedWidth(230)
         lv = QVBoxLayout(left)
-        lv.setContentsMargins(0, 0, 8, 0)
+        lv.setContentsMargins(0, 0, 10, 0)
         lv.setSpacing(4)
 
         left_title = QLabel('Excel 表头')
         left_title.setObjectName('sectionTitle')
         lv.addWidget(left_title)
 
-        self._tags_row = QHBoxLayout()
-        self._tags_row.setContentsMargins(0, 0, 0, 0)
-        self._tags_row.setSpacing(4)
-        self._tags_scroll_widget = QWidget()
-        self._tags_scroll_widget.setLayout(self._tags_row)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(self._tags_scroll_widget)
-        scroll.setMaximumHeight(60)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        lv.addWidget(scroll)
-        lv.addStretch()
+        hint_l = QLabel('点击选中，再点右侧字段完成匹配')
+        hint_l.setObjectName('mapHint')
+        hint_l.setWordWrap(True)
+        lv.addWidget(hint_l)
+
+        self._tags_container = QWidget()
+        self._tags_vbox = QVBoxLayout(self._tags_container)
+        self._tags_vbox.setContentsMargins(0, 0, 0, 0)
+        self._tags_vbox.setSpacing(3)
+        self._tags_vbox.addStretch()
+
+        tags_scroll = QScrollArea()
+        tags_scroll.setObjectName('tagsScroll')
+        tags_scroll.setWidgetResizable(True)
+        tags_scroll.setWidget(self._tags_container)
+        tags_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        tags_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lv.addWidget(tags_scroll, 1)
 
         outer.addWidget(left)
 
@@ -348,23 +355,29 @@ class _MappingWidget(QWidget):
         sep.setFrameShape(QFrame.Shape.VLine)
         outer.addWidget(sep)
 
-        # Right panel
+        # Right panel — lrmx field rows
         right = QWidget()
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(8, 0, 0, 0)
-        rv.setSpacing(2)
+        rv.setContentsMargins(10, 0, 0, 0)
+        rv.setSpacing(4)
 
         right_title = QLabel('任免表字段')
         right_title.setObjectName('sectionTitle')
         rv.addWidget(right_title)
 
+        hint_r = QLabel('已选中表头后，点击对应字段完成匹配；点击 ✕ 取消匹配')
+        hint_r.setObjectName('mapHint')
+        hint_r.setWordWrap(True)
+        rv.addWidget(hint_r)
+
         self._fields_scroll = QScrollArea()
         self._fields_scroll.setWidgetResizable(True)
         self._fields_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._fields_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._fields_container = QWidget()
         self._fields_vbox = QVBoxLayout(self._fields_container)
         self._fields_vbox.setContentsMargins(0, 0, 0, 0)
-        self._fields_vbox.setSpacing(0)
+        self._fields_vbox.setSpacing(2)
         self._fields_vbox.addStretch()
         self._fields_scroll.setWidget(self._fields_container)
         rv.addWidget(self._fields_scroll, 1)
@@ -372,9 +385,8 @@ class _MappingWidget(QWidget):
         outer.addWidget(right, 1)
 
     def load_excel_cols(self, cols: list[str]):
-        # Clear old tags
-        while self._tags_row.count():
-            item = self._tags_row.takeAt(0)
+        while self._tags_vbox.count():
+            item = self._tags_vbox.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._tags.clear()
@@ -388,8 +400,8 @@ class _MappingWidget(QWidget):
             tag = _MatchTag(col)
             tag.clicked_tag.connect(self._on_tag_clicked)
             self._tags[col] = tag
-            self._tags_row.addWidget(tag)
-        self._tags_row.addStretch()
+            self._tags_vbox.addWidget(tag)
+        self._tags_vbox.addStretch()
 
         for fr in self._field_rows.values():
             fr.set_mapped(None)
@@ -662,8 +674,9 @@ class VerifyTab(QWidget):
         layout.addWidget(map_sub)
 
         self._mapping_widget = _MappingWidget()
+        self._mapping_widget.setMinimumHeight(220)
         self._mapping_widget.mapping_changed.connect(self._update_run_btn)
-        layout.addWidget(self._mapping_widget)
+        layout.addWidget(self._mapping_widget, 1)
 
         clear_map_row = QHBoxLayout()
         clear_map_row.addStretch()
@@ -743,7 +756,7 @@ class VerifyTab(QWidget):
         self._result_vbox.setSpacing(0)
         self._result_vbox.addStretch()
         result_scroll.setWidget(result_container)
-        layout.addWidget(result_scroll, 1)
+        layout.addWidget(result_scroll, 2)
 
     # ── file list helpers ─────────────────────────────────────────────────────
 

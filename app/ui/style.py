@@ -357,20 +357,43 @@ QScrollBar::handle:vertical {{
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
 }}
+QScrollBar:horizontal {{
+    border: none;
+    background: transparent;
+    height: 6px;
+    margin: 0;
+}}
+QScrollBar::handle:horizontal {{
+    background: #C0BEB8;
+    border-radius: 3px;
+    min-width: 20px;
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0;
+}}
 
 /* ── 批量核验标签和元素 ──────────────────────────────────────────────── */
-QLabel#matchTag {{
-    background: #1a3a5c;
-    color: #7bb3e8;
-    border: 1px solid #2d5a8e;
-    border-radius: 10px;
-    padding: 2px 8px;
+QLabel#mapHint {{
+    color: #666660;
     font-size: 11px;
+    margin-bottom: 4px;
+}}
+QLabel#matchTag {{
+    background: #1a2e42;
+    color: #7bb3e8;
+    border: 1px solid #243a52;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+}}
+QLabel#matchTag:hover {{
+    background: #1f3850;
+    border-color: #3a6a9a;
 }}
 QLabel#matchTag[selected="true"] {{
-    background: #2d5a8e;
+    background: #1e4a7a;
     color: #c8e0ff;
-    border-color: #5ba0e0;
+    border-color: #4a90d4;
 }}
 QWidget#fieldRow {{
     background: #242424;
