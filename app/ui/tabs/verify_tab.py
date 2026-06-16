@@ -167,12 +167,15 @@ class _LoadingOverlay(QWidget):
         v = QVBoxLayout(self)
         v.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        lbl = QLabel('核验中，请稍候…')
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl.setStyleSheet('color: #555555; font-size: 14px; background: transparent;')
-        v.addWidget(lbl)
+        self._lbl = QLabel('核验中，请稍候…')
+        self._lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl.setStyleSheet('color: #555555; font-size: 14px; background: transparent;')
+        v.addWidget(self._lbl)
 
         self.hide()
+
+    def set_text(self, text: str):
+        self._lbl.setText(text)
 
 
 # ── field mapping widgets ─────────────────────────────────────────────────────
@@ -800,7 +803,6 @@ class VerifyTab(QWidget):
         self._summary_cards_widget = QWidget()
         self._summary_cards_widget.setLayout(summary_row)
         self._summary_cards_widget.hide()
-        layout.addWidget(self._summary_cards_widget)
 
         # ── 导出行 ─────────────────────────────────────────────────────────
         self._export_row = QWidget()
@@ -827,6 +829,7 @@ class VerifyTab(QWidget):
         er.addWidget(self._export_status_lbl, 1)
 
         layout.addWidget(self._export_row)
+        layout.addWidget(self._summary_cards_widget)
 
         result_scroll = QScrollArea()
         result_scroll.setObjectName('resultScroll')
@@ -1003,6 +1006,7 @@ class VerifyTab(QWidget):
 
     def _on_finished(self):
         QTimer.singleShot(400, self._loading_overlay.hide)
+        self._update_export_btn()
 
     def _update_export_btn(self):
         has_format = self._chk_excel.isChecked() or self._chk_html.isChecked()
@@ -1021,39 +1025,50 @@ class VerifyTab(QWidget):
         if not directory:
             return
 
-        filter_label = {
-            'ok': '一致', 'diff': '有差异',
-            'not_found': '名册无此人', 'error': '错误',
-        }.get(self._active_filter, '全部')
-        date_str = datetime.now().strftime('%Y%m%d')
-        stem = f'核验结果_{date_str}_{filter_label}'
-        out_dir = Path(directory)
+        self._loading_overlay.set_text('导出中，请稍候…')
+        self._loading_overlay.resize(self._result_scroll.size())
+        self._loading_overlay.raise_()
+        self._loading_overlay.show()
 
-        errors: list[str] = []
-        saved: list[str] = []
+        def _do():
+            filter_label = {
+                'ok': '一致', 'diff': '有差异',
+                'not_found': '名册无此人', 'error': '错误',
+            }.get(self._active_filter, '全部')
+            date_str = datetime.now().strftime('%Y%m%d')
+            stem = f'核验结果_{date_str}_{filter_label}'
+            out_dir = Path(directory)
 
-        if self._chk_excel.isChecked():
-            try:
-                p = out_dir / f'{stem}.xlsx'
-                export_excel(visible, p)
-                saved.append(p.name)
-            except Exception as e:
-                errors.append(f'Excel: {e}')
+            errors: list[str] = []
+            saved: list[str] = []
 
-        if self._chk_html.isChecked():
-            try:
-                p = out_dir / f'{stem}.html'
-                export_html(visible, p, self._summary_lbl.text())
-                saved.append(p.name)
-            except Exception as e:
-                errors.append(f'HTML: {e}')
+            if self._chk_excel.isChecked():
+                try:
+                    p = out_dir / f'{stem}.xlsx'
+                    export_excel(visible, p)
+                    saved.append(p.name)
+                except Exception as e:
+                    errors.append(f'Excel: {e}')
 
-        if errors:
-            QMessageBox.warning(self, '导出失败', '\n'.join(errors))
+            if self._chk_html.isChecked():
+                try:
+                    p = out_dir / f'{stem}.html'
+                    export_html(visible, p, self._summary_lbl.text())
+                    saved.append(p.name)
+                except Exception as e:
+                    errors.append(f'HTML: {e}')
 
-        if saved:
-            self._export_status_lbl.setText(f'✓ 已保存到 {directory}')
-            QTimer.singleShot(3000, lambda: self._export_status_lbl.setText(''))
+            self._loading_overlay.hide()
+            self._loading_overlay.set_text('核验中，请稍候…')
+
+            if errors:
+                QMessageBox.warning(self, '导出失败', '\n'.join(errors))
+
+            if saved:
+                self._export_status_lbl.setText(f'✓ 已保存到 {directory}')
+                QTimer.singleShot(3000, lambda: self._export_status_lbl.setText(''))
+
+        QTimer.singleShot(0, _do)
 
     def _set_result_filter(self, key: str):
         if self._active_filter == key:
