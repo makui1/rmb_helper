@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
-        self.setMinimumSize(860, 580)
+        self.setMinimumSize(900, 700)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
         self.setStyleSheet(QSS)
@@ -184,6 +184,7 @@ class MainWindow(QMainWindow):
             ('批量转换', 'convert.svg'),
             ('批量更新', 'update.svg'),
             ('版本兼容', 'compat.svg'),
+            ('批量核验', 'verify.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
@@ -202,11 +203,13 @@ class MainWindow(QMainWindow):
         from app.ui.tabs.convert_tab import ConvertTab
         from app.ui.tabs.update_tab import UpdateTab
         from app.ui.tabs.compat_tab import CompatTab
+        from app.ui.tabs.verify_tab import VerifyTab
 
         self._stack = QStackedWidget()
         self._stack.addWidget(ConvertTab())
         self._stack.addWidget(UpdateTab())
         self._stack.addWidget(CompatTab())
+        self._stack.addWidget(VerifyTab())
         self._stack.addWidget(SettingsTab())
 
         body_layout.addWidget(sidebar_container)
