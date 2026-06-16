@@ -437,8 +437,9 @@ QLabel#resultName {{
     font-weight: 600;
 }}
 QTextEdit#diffDetail {{
-    background: #111518;
+    background: #FAFAF8;
     border: none;
+    border-top: 1px solid #E8E4DE;
     border-radius: 0;
     font-size: 12px;
 }}

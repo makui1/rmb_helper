@@ -19,19 +19,20 @@ _ASSETS = Path(__file__).parent.parent / 'assets'
 
 _DIFF_STYLE = """
 <style>
-  body { font-family: "Microsoft YaHei", "PingFang SC", monospace; font-size: 12px; }
+  body { font-family: "Microsoft YaHei UI", "PingFang SC", sans-serif;
+         font-size: 12px; background: #FAFAF8; color: #1A1A1A; margin: 0; }
   table { border-collapse: collapse; width: 100%; }
-  th { font-size: 11px; color: #666; text-align: left; padding: 4px 8px;
-       border-bottom: 1px solid #2a2a2a; background: #111; }
-  td { padding: 5px 8px; border-bottom: 1px solid #1e1e1e;
-       vertical-align: middle; word-break: break-all; }
-  .field { color: #557799; width: 160px; font-size: 11px; }
-  .eq    { color: #aaa; }
-  .del   { background: #4a1515; color: #ff9090; border-radius: 2px; padding: 0 1px; }
-  .ins   { background: #124020; color: #80e0a0; border-radius: 2px; padding: 0 1px; }
-  .same  { color: #3a5a3a; font-style: italic; font-size: 10px; }
-  tr.diff-row td { background: #111820; }
-  .footer { font-size: 10px; color: #555; padding: 4px 8px; }
+  th { font-size: 11px; color: #888880; text-align: left; padding: 5px 10px;
+       border-bottom: 1px solid #E8E4DE; background: #F5F2EE; font-weight: 500; }
+  td { padding: 5px 10px; border-bottom: 1px solid #F0EDEA;
+       vertical-align: middle; word-break: break-all; color: #333330; }
+  .field { color: #888880; width: 160px; font-size: 11px; }
+  .del   { background: #FDEAEA; color: #B02020; border-radius: 2px; padding: 0 2px; }
+  .ins   { background: #E8F5EC; color: #1E7A3A; border-radius: 2px; padding: 0 2px; }
+  .same  { color: #AAAAAA; font-style: italic; font-size: 11px; }
+  tr.diff-row td { background: #FFFAF8; }
+  .footer { font-size: 10px; color: #AAAAAA; padding: 5px 10px;
+            border-top: 1px solid #E8E4DE; }
 </style>
 """
 
@@ -59,8 +60,8 @@ def _build_detail_html(result: PersonResult, field_mapping: dict[str, str]) -> s
     return (
         f'{_DIFF_STYLE}'
         f'<table><thead><tr><th>字段</th>'
-        f'<th style="color:#5588bb">Excel 名册</th>'
-        f'<th style="color:#558855">任免表</th></tr></thead>'
+        f'<th style="color:#2060A0">Excel 名册</th>'
+        f'<th style="color:#1E7A3A">任免表</th></tr></thead>'
         f'<tbody>{body}</tbody></table>'
         f'<div class="footer">{footer}</div>'
     )
@@ -578,17 +579,17 @@ class _ResultRow(QWidget):
         status = self._result.status
         if status == 'ok':
             badge_text = '一致'
-            color = '#5db880'
+            color = '#1E7A3A'
         elif status == 'diff':
             n_diff = sum(1 for f in self._result.fields if not f.match)
             badge_text = f'{n_diff} 处差异'
-            color = '#e06060'
+            color = '#B02020'
         elif status == 'not_found':
             badge_text = '名册无此人'
-            color = '#d4a55a'
+            color = '#C07030'
         else:
             badge_text = '错误'
-            color = '#888'
+            color = '#888880'
 
         badge = QLabel(badge_text)
         badge.setStyleSheet(f'color: {color}; font-size: 11px; font-weight: 600;')
