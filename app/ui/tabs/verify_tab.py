@@ -1279,6 +1279,7 @@ class VerifyTab(QWidget):
     def _on_update_critical(self, msg: str):
         self._update_loading_overlay.hide()
         QMessageBox.critical(self, 'Excel 读取失败', msg)
+        self._back_to_setup()
 
     def _on_update_finished(self):
         QTimer.singleShot(400, self._update_loading_overlay.hide)
@@ -1315,6 +1316,10 @@ class VerifyTab(QWidget):
     def _back_to_setup(self):
         self._loading_overlay.hide()
         self._update_loading_overlay.hide()
+        if self._update_worker and self._update_worker.isRunning():
+            self._update_worker.log.disconnect()
+            self._update_worker.critical.disconnect()
+            self._update_worker.finished.disconnect()
         self._setup_panel.show()
         self._back_btn.setText('← 重新配置')
         self._summary_bar.hide()
