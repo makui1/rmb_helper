@@ -640,15 +640,23 @@ class VerifyTab(QWidget):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(12)
 
+        # ══════════════════════════════════════════════════════════════════════
+        # 设置面板（核验开始后隐藏）
+        # ══════════════════════════════════════════════════════════════════════
+        self._setup_panel = QWidget()
+        sp = QVBoxLayout(self._setup_panel)
+        sp.setContentsMargins(0, 0, 0, 0)
+        sp.setSpacing(12)
+
         title = QLabel('批量核验')
         title.setObjectName('sectionTitle')
-        layout.addWidget(title)
+        sp.addWidget(title)
 
         sub = QLabel('对照干部名册（Excel），核验任免审批表中的字段是否一致')
         sub.setStyleSheet('color: #888880; font-size: 12px;')
-        layout.addWidget(sub)
+        sp.addWidget(sub)
 
-        # ── lrmx 文件列表 ───────────────────────────────────────────────────────
+        # ── lrmx 文件列表 ──────────────────────────────────────────────────
         list_header = QHBoxLayout()
         list_header.setContentsMargins(0, 0, 0, 0)
         list_header.setSpacing(6)
@@ -672,7 +680,7 @@ class VerifyTab(QWidget):
         list_header.addWidget(add_btn)
         list_header.addWidget(del_btn)
         list_header.addWidget(clear_btn)
-        layout.addLayout(list_header)
+        sp.addLayout(list_header)
 
         self._file_list = _FileList()
         self._file_list.setObjectName('fileList')
@@ -682,13 +690,13 @@ class VerifyTab(QWidget):
         self._file_list.empty_clicked.connect(lambda: add_menu.exec(
             add_btn.mapToGlobal(add_btn.rect().bottomLeft())
         ))
-        layout.addWidget(self._file_list)
+        sp.addWidget(self._file_list)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep1)
+        sp.addWidget(sep1)
 
-        # ── Excel 文件 ─────────────────────────────────────────────────────────
+        # ── Excel 文件 ─────────────────────────────────────────────────────
         xl_row = QHBoxLayout()
         xl_label = QLabel('干部名册')
         xl_label.setFixedWidth(60)
@@ -711,25 +719,25 @@ class VerifyTab(QWidget):
         self._header_spin.setFixedWidth(80)
         self._header_spin.valueChanged.connect(self._reload_excel_headers)
         xl_row.addWidget(self._header_spin)
-        layout.addLayout(xl_row)
+        sp.addLayout(xl_row)
 
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep2)
+        sp.addWidget(sep2)
 
-        # ── 字段匹配 ───────────────────────────────────────────────────────────
+        # ── 字段匹配 ────────────────────────────────────────────────────────
         map_title = QLabel('字段匹配')
         map_title.setObjectName('sectionTitle')
-        layout.addWidget(map_title)
+        sp.addWidget(map_title)
 
         map_sub = QLabel('点击左侧 Excel 表头选中 → 点击右侧字段完成匹配')
         map_sub.setStyleSheet('color: #888880; font-size: 12px;')
-        layout.addWidget(map_sub)
+        sp.addWidget(map_sub)
 
         self._mapping_widget = _MappingWidget()
         self._mapping_widget.setMinimumHeight(220)
         self._mapping_widget.mapping_changed.connect(self._update_run_btn)
-        layout.addWidget(self._mapping_widget, 1)
+        sp.addWidget(self._mapping_widget, 1)
 
         clear_map_row = QHBoxLayout()
         clear_map_row.addStretch()
@@ -737,13 +745,13 @@ class VerifyTab(QWidget):
         clear_map_btn.setFixedHeight(24)
         clear_map_btn.clicked.connect(self._mapping_widget.clear_all)
         clear_map_row.addWidget(clear_map_btn)
-        layout.addLayout(clear_map_row)
+        sp.addLayout(clear_map_row)
 
         sep3 = QFrame()
         sep3.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep3)
+        sp.addWidget(sep3)
 
-        # ── 匹配依据 + 开始按钮 ────────────────────────────────────────────────
+        # ── 匹配依据 + 开始按钮 ─────────────────────────────────────────────
         run_row = QHBoxLayout()
         match_label = QLabel('匹配依据')
         match_label.setFixedWidth(60)
@@ -769,9 +777,46 @@ class VerifyTab(QWidget):
         self._run_btn.setEnabled(False)
         self._run_btn.clicked.connect(self._run)
         run_row.addWidget(self._run_btn)
-        layout.addLayout(run_row)
+        sp.addLayout(run_row)
 
-        # ── 汇总卡片 ───────────────────────────────────────────────────────────
+        layout.addWidget(self._setup_panel, 1)
+
+        # ══════════════════════════════════════════════════════════════════════
+        # 配置摘要栏（核验开始后显示，替代设置面板）
+        # ══════════════════════════════════════════════════════════════════════
+        self._summary_bar = QWidget()
+        self._summary_bar.setObjectName('summaryBar')
+        self._summary_bar.hide()
+        sb = QHBoxLayout(self._summary_bar)
+        sb.setContentsMargins(0, 0, 0, 0)
+        sb.setSpacing(12)
+
+        back_btn = QPushButton('← 重新配置')
+        back_btn.setFixedHeight(28)
+        back_btn.clicked.connect(self._back_to_setup)
+        sb.addWidget(back_btn)
+
+        sep_v = QFrame()
+        sep_v.setFrameShape(QFrame.Shape.VLine)
+        sep_v.setFixedHeight(18)
+        sb.addWidget(sep_v, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._summary_lbl = QLabel()
+        self._summary_lbl.setStyleSheet('color: #888880; font-size: 12px;')
+        sb.addWidget(self._summary_lbl, 1)
+
+        layout.addWidget(self._summary_bar)
+
+        sep_result = QFrame()
+        sep_result.setFrameShape(QFrame.Shape.HLine)
+        sep_result.setObjectName('resultTopSep')
+        sep_result.hide()
+        self._result_top_sep = sep_result
+        layout.addWidget(sep_result)
+
+        # ══════════════════════════════════════════════════════════════════════
+        # 汇总卡片 + 结果滚动区（始终存在，核验前空白）
+        # ══════════════════════════════════════════════════════════════════════
         summary_row = QHBoxLayout()
         summary_row.setSpacing(12)
         self._count_labels: dict[str, QLabel] = {}
@@ -795,9 +840,12 @@ class VerifyTab(QWidget):
             self._count_labels[key] = cnt_lbl
             summary_row.addWidget(card)
         summary_row.addStretch()
-        layout.addLayout(summary_row)
+        self._summary_cards_row = summary_row
+        self._summary_cards_widget = QWidget()
+        self._summary_cards_widget.setLayout(summary_row)
+        self._summary_cards_widget.hide()
+        layout.addWidget(self._summary_cards_widget)
 
-        # ── 结果滚动区 ─────────────────────────────────────────────────────────
         result_scroll = QScrollArea()
         result_scroll.setObjectName('resultScroll')
         result_scroll.setWidgetResizable(True)
@@ -809,7 +857,7 @@ class VerifyTab(QWidget):
         self._result_vbox.setSpacing(0)
         self._result_vbox.addStretch()
         result_scroll.setWidget(result_container)
-        layout.addWidget(result_scroll, 2)
+        layout.addWidget(result_scroll, 1)
 
     # ── file list helpers ─────────────────────────────────────────────────────
 
@@ -966,12 +1014,30 @@ class VerifyTab(QWidget):
         )
 
         self._clear_results()
-        self._run_btn.setEnabled(False)
+
+        # 切换到结果视图
+        xl_name = Path(excel_path).name
+        n_files = len(files)
+        n_mapped = len(mapping)
+        self._summary_lbl.setText(
+            f'{n_files} 个任免表  ·  名册：{xl_name}  ·  已匹配 {n_mapped} 个字段'
+        )
+        self._setup_panel.hide()
+        self._summary_bar.show()
+        self._result_top_sep.show()
+        self._summary_cards_widget.show()
 
         self._worker = _VerifyWorker(handler)
         self._worker.result_ready.connect(self._on_result)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
+
+    def _back_to_setup(self):
+        self._setup_panel.show()
+        self._summary_bar.hide()
+        self._result_top_sep.hide()
+        self._summary_cards_widget.hide()
+        self._clear_results()
 
     def _on_result(self, result: PersonResult):
         status = result.status if result.status in self._counts else 'error'
@@ -983,7 +1049,7 @@ class VerifyTab(QWidget):
         self._result_vbox.insertWidget(idx, row_widget)
 
     def _on_finished(self):
-        self._run_btn.setEnabled(True)
+        pass  # run button is hidden during results view; nothing to re-enable
 
     def _clear_results(self):
         self._counts = {'ok': 0, 'diff': 0, 'not_found': 0, 'error': 0}
