@@ -1,8 +1,8 @@
 # 批量核验与批量更新合并 Design Spec
 
-**Goal:** 将"批量更新"功能并入"批量核验" Tab，共用字段映射配置，通过两个并排操作按钮区分核验与更新，同时修复现有更新逻辑无法正确读取 Excel 列的根本问题。
+**Goal:** 将"批量更新"功能并入"批量核验" Tab，共用字段映射配置，通过两个并排操作按钮区分核验与更新，同时修复现有更新逻辑无法正确读取 Excel 列的根本问题；并支持向文件列表拖拽目录。
 
-**Architecture:** 删除 `update_tab.py`，在 `verify_tab.py` 中增加更新操作、字段选择对话框和更新结果视图；重构 `excel_handler.py` 的 `update()` 方法使其接受字段映射参数；`main_window.py` 移除 UpdateTab 入口。
+**Architecture:** 删除 `update_tab.py`，在 `verify_tab.py` 中增加更新操作、字段选择对话框和更新结果视图；重构 `excel_handler.py` 的 `update()` 方法使其接受字段映射参数；`main_window.py` 移除 UpdateTab 入口；`file_panel.py` 的拖放逻辑扩展为支持目录。
 
 **Tech Stack:** PySide6、openpyxl（已有依赖）
 
@@ -12,6 +12,7 @@
 
 | 文件 | 操作 |
 |------|------|
+| `app/ui/widgets/file_panel.py` | 修改：`dropEvent` 支持拖拽目录 |
 | `app/core/excel_handler.py` | 修改：重构 `ExcelHandler.update()` 签名与实现 |
 | `app/ui/tabs/verify_tab.py` | 修改：增加更新操作入口、`_UpdateFieldDialog`、更新结果视图、更新 Worker |
 | `app/ui/tabs/update_tab.py` | 删除 |
@@ -176,6 +177,59 @@ class _UpdateWorker(QThread):
 | .lrmx 写入失败（权限/磁盘） | 记录 `✗` 日志行，继续处理下一个文件 |
 | Excel 读取失败 | `_LoadingOverlay` 隐藏，`QMessageBox.critical` 显示错误 |
 | 未匹配到任何记录 | 汇总栏显示"未匹配 N 个"，不视为错误 |
+
+---
+
+## file_panel.py — 拖拽目录支持
+
+### 现有问题
+
+`LrmxFilePanel.dropEvent` 只检查 `.lrmx` 后缀，拖入目录时静默跳过。
+
+### 修改内容
+
+**`LrmxFilePanel.dropEvent`**：
+
+```python
+def dropEvent(self, event: QDropEvent):
+    for url in event.mimeData().urls():
+        path = url.toLocalFile()
+        if Path(path).is_dir():
+            self._scan_and_add(path)
+        elif path.lower().endswith('.lrmx'):
+            self.add_file(path)
+```
+
+新增 `_scan_and_add(folder: str)` 方法，逻辑与 `_pick_folder` 完全一致（启动 `_FolderScanWorker`，完成后调用 `_batch_add`），可直接提取为共用方法避免重复。
+
+**`_pick_folder` 重构**（提取公共逻辑）：
+
+```python
+def _pick_folder(self):
+    folder = QFileDialog.getExistingDirectory(self, '选择包含 lrmx 文件的文件夹')
+    if folder:
+        self._scan_and_add(folder)
+
+def _scan_and_add(self, folder: str):
+    dlg = _LoadingDialog(self.window(), '正在扫描文件夹…')
+    self._scan_worker = _FolderScanWorker(folder)
+    def on_done(paths):
+        if paths:
+            self._batch_add(paths, on_finish=dlg.accept)
+        else:
+            dlg.accept()
+    self._scan_worker.done.connect(on_done)
+    self._scan_worker.start()
+    dlg.exec()
+```
+
+**`_FileList._HINT`** 占位提示文字改为：
+
+```python
+_HINT = '拖放 .lrmx 文件或文件夹至此，或点击「添加」'
+```
+
+`verify_tab.py` 中 Tab 级别的 `dropEvent` 也需同步处理目录（调用 `self._file_panel._scan_and_add(path)`）。
 
 ---
 
