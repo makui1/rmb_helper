@@ -372,67 +372,68 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0;
 }}
 
-/* ── 批量核验标签和元素 ──────────────────────────────────────────────── */
+/* ── 批量核验：字段匹配标签 ──────────────────────────────────────────── */
 QLabel#matchTag {{
-    background: #1a3a5c;
-    color: #7bb3e8;
-    border: 1px solid #2d5a8e;
+    background: #F0EDE8;
+    color: #444440;
+    border: 1px solid #D8D4CE;
     border-radius: 10px;
     padding: 3px 10px;
     font-size: 12px;
 }}
 QLabel#matchTag:hover {{
-    background: #1f4470;
-    border-color: #4a80c0;
+    background: #EAE5DE;
+    border-color: #C0B8B0;
+    color: #1A1A1A;
 }}
 QLabel#matchTag[selected="true"] {{
-    background: #1e4a7a;
-    color: #c8e0ff;
-    border-color: #4a90d4;
-    border-width: 2px;
+    background: {ACCENT};
+    color: #FFFFFF;
+    border-color: {ACCENT_HOVER};
 }}
+
+/* ── 批量核验：任免表字段行 ──────────────────────────────────────────── */
 QWidget#fieldRow {{
-    background: #242424;
-    border: 1px solid transparent;
+    background: #FAFAF8;
+    border: 1px solid #E8E4DE;
     border-radius: 4px;
 }}
 QWidget#fieldRow:hover {{
-    border-color: #2d5a8e;
+    background: {ACCENT_LIGHT};
+    border-color: {ACCENT};
 }}
 QWidget#fieldRow[pending="true"] {{
-    border-color: #3a5070;
+    border-color: rgba(216, 90, 48, 0.35);
+    background: rgba(216, 90, 48, 0.04);
 }}
 QLabel#fieldRowName {{
-    color: #ccc;
-    font-size: 11px;
+    color: #333330;
+    font-size: 12px;
 }}
 QLabel#fieldRowMapped {{
-    color: #5db880;
+    color: #2a7a4a;
     font-size: 11px;
-    background: #1a3a24;
-    border: 1px solid #2d6a4f;
+    background: #e8f5ec;
+    border: 1px solid #a8d8b8;
     border-radius: 8px;
-    padding: 1px 6px;
+    padding: 1px 8px;
 }}
 QLabel#fieldRowUnmapped {{
-    color: #555;
+    color: #AAAAAA;
     font-size: 11px;
     font-style: italic;
 }}
-QWidget#summaryCard {{
-    background: #1e1e1e;
-    border: 1px solid #2a2a2a;
-    border-radius: 5px;
-}}
+
+/* ── 批量核验：结果区 ────────────────────────────────────────────────── */
 QWidget#resultRowHeader:hover {{
-    background: #1e2530;
+    background: #F5F2EE;
 }}
 QLabel#resultArrow {{
-    color: #555;
+    color: #AAAAAA;
     font-size: 11px;
 }}
 QLabel#resultName {{
-    color: #ccc;
+    color: #1A1A1A;
     font-weight: 600;
 }}
 QTextEdit#diffDetail {{
@@ -442,8 +443,8 @@ QTextEdit#diffDetail {{
     font-size: 12px;
 }}
 QFrame#resultSep {{
-    color: #1e1e1e;
-    background: #1e1e1e;
+    color: #EEECEA;
+    background: #EEECEA;
     max-height: 1px;
 }}
 QScrollArea#resultScroll {{
