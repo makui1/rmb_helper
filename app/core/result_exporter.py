@@ -1,14 +1,13 @@
 """Export verification results to Excel or self-contained HTML."""
 from __future__ import annotations
 
-import html as _html
 from datetime import datetime
 from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
-from app.core.verify_handler import PersonResult, char_diff_html
+from app.core.verify_handler import PersonResult
 
 # ── shared constants ──────────────────────────────────────────────────────────
 
