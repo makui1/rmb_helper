@@ -821,6 +821,7 @@ class VerifyTab(QWidget):
         er.addWidget(self._chk_html)
 
         self._export_btn = QPushButton('导出当前结果')
+        self._export_btn.setIcon(QIcon(str(_ASSETS / 'export.svg')))
         self._export_btn.clicked.connect(self._export_results)
         er.addWidget(self._export_btn)
 
