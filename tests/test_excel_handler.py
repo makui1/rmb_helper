@@ -136,3 +136,41 @@ def test_header_row_param(sample_lrmx, tmp_path):
     )
     updated = LrmxFile(sample_lrmx)
     assert updated.get('XianRenZhiWu') == '处长'
+
+
+def test_backup_restored_on_save_failure(sample_lrmx, tmp_path, monkeypatch):
+    """写入失败时备份文件应被还原为原文件"""
+    excel = make_excel(tmp_path / 'data.xlsx', [
+        {'证件号': '110101199001011234', '现任职务': '副科长'},
+    ])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
+
+    def failing_save(path):
+        raise OSError('磁盘已满')
+
+    monkeypatch.setattr('app.core.lrmx.LrmxFile.save', failing_save)
+
+    logs = handler.update(
+        field_mapping=field_mapping,
+        fields_to_write=['XianRenZhiWu'],
+        match_excel_col_for_id='证件号',
+    )
+    assert any('✗' in log for log in logs)
+    assert sample_lrmx.exists(), '原文件应被还原'
+    assert not sample_lrmx.with_suffix('.lrmx.bak').exists(), '备份文件应消失'
+
+
+def test_validation_id_col_required(sample_lrmx, tmp_path):
+    """ID_CARD 模式未提供 match_excel_col_for_id 应抛出 ValueError"""
+    excel = make_excel(tmp_path / 'data.xlsx', [
+        {'证件号': '110101199001011234', '现任职务': '副科长'},
+    ])
+    handler = ExcelHandler(excel, [sample_lrmx], MatchMode.ID_CARD)
+    field_mapping = {'证件号': 'ShenFenZheng', '现任职务': 'XianRenZhiWu'}
+    with pytest.raises(ValueError, match='match_excel_col_for_id'):
+        handler.update(
+            field_mapping=field_mapping,
+            fields_to_write=['XianRenZhiWu'],
+            # match_excel_col_for_id intentionally omitted
+        )

@@ -69,6 +69,12 @@ class ExcelHandler:
         match_excel_col_for_id:  用于匹配身份证的 Excel 列名
         match_excel_col_for_name:用于匹配姓名的 Excel 列名
         """
+        if self.match_mode == MatchMode.ID_CARD and not match_excel_col_for_id:
+            raise ValueError('ID_CARD 匹配模式需要提供 match_excel_col_for_id')
+        if self.match_mode == MatchMode.NAME and not match_excel_col_for_name:
+            raise ValueError('NAME 匹配模式需要提供 match_excel_col_for_name')
+        if self.match_mode == MatchMode.NAME_AND_ID and not (match_excel_col_for_id and match_excel_col_for_name):
+            raise ValueError('NAME_AND_ID 匹配模式需要同时提供 match_excel_col_for_id 和 match_excel_col_for_name')
         wb = openpyxl.load_workbook(self.excel_path)
         ws = wb.active
 
@@ -117,6 +123,7 @@ class ExcelHandler:
                 if progress_cb:
                     progress_cb(msg)
             except Exception as e:
+                backup.rename(lf.path)
                 msg = f'✗ {name}  {e}'
                 logs.append(msg)
                 if progress_cb:
