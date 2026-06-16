@@ -5,7 +5,7 @@ import html as _html_lib
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit,
+    QPushButton, QLineEdit, QCheckBox, QMessageBox,
     QRadioButton, QButtonGroup, QFileDialog,
     QSizePolicy, QFrame,
     QScrollArea, QSpinBox, QLayout, QSplitter,
@@ -802,6 +802,32 @@ class VerifyTab(QWidget):
         self._summary_cards_widget.hide()
         layout.addWidget(self._summary_cards_widget)
 
+        # ── 导出行 ─────────────────────────────────────────────────────────
+        self._export_row = QWidget()
+        self._export_row.hide()
+        er = QHBoxLayout(self._export_row)
+        er.setContentsMargins(0, 2, 0, 2)
+        er.setSpacing(12)
+
+        self._chk_excel = QCheckBox('Excel')
+        self._chk_excel.setChecked(True)
+        self._chk_html = QCheckBox('HTML')
+        self._chk_html.setChecked(True)
+        self._chk_excel.toggled.connect(self._update_export_btn)
+        self._chk_html.toggled.connect(self._update_export_btn)
+        er.addWidget(self._chk_excel)
+        er.addWidget(self._chk_html)
+
+        self._export_btn = QPushButton('导出当前结果')
+        self._export_btn.clicked.connect(self._export_results)
+        er.addWidget(self._export_btn)
+
+        self._export_status_lbl = QLabel('')
+        self._export_status_lbl.setStyleSheet('color: #1E7A3A; font-size: 12px;')
+        er.addWidget(self._export_status_lbl, 1)
+
+        layout.addWidget(self._export_row)
+
         result_scroll = QScrollArea()
         result_scroll.setObjectName('resultScroll')
         result_scroll.setWidgetResizable(True)
@@ -942,6 +968,8 @@ class VerifyTab(QWidget):
         self._summary_bar.show()
         self._result_top_sep.show()
         self._summary_cards_widget.show()
+        self._export_row.show()
+        self._update_export_btn()
         self._result_scroll.show()
 
         self._loading_overlay.resize(self._result_scroll.size())
@@ -959,6 +987,7 @@ class VerifyTab(QWidget):
         self._summary_bar.hide()
         self._result_top_sep.hide()
         self._summary_cards_widget.hide()
+        self._export_row.hide()
         self._result_scroll.hide()
         self._clear_results()
 
@@ -974,6 +1003,57 @@ class VerifyTab(QWidget):
 
     def _on_finished(self):
         QTimer.singleShot(400, self._loading_overlay.hide)
+
+    def _update_export_btn(self):
+        has_format = self._chk_excel.isChecked() or self._chk_html.isChecked()
+        visible_count = sum(1 for r in self._result_rows if r.isVisible())
+        self._export_btn.setEnabled(has_format and visible_count > 0)
+
+    def _export_results(self):
+        from datetime import datetime
+        from app.core.result_exporter import export_excel, export_html
+
+        visible = [r._result for r in self._result_rows if r.isVisible()]
+        if not visible:
+            return
+
+        directory = QFileDialog.getExistingDirectory(self, '选择导出目录')
+        if not directory:
+            return
+
+        filter_label = {
+            'ok': '一致', 'diff': '有差异',
+            'not_found': '名册无此人', 'error': '错误',
+        }.get(self._active_filter, '全部')
+        date_str = datetime.now().strftime('%Y%m%d')
+        stem = f'核验结果_{date_str}_{filter_label}'
+        out_dir = Path(directory)
+
+        errors: list[str] = []
+        saved: list[str] = []
+
+        if self._chk_excel.isChecked():
+            try:
+                p = out_dir / f'{stem}.xlsx'
+                export_excel(visible, p)
+                saved.append(p.name)
+            except Exception as e:
+                errors.append(f'Excel: {e}')
+
+        if self._chk_html.isChecked():
+            try:
+                p = out_dir / f'{stem}.html'
+                export_html(visible, p, self._summary_lbl.text())
+                saved.append(p.name)
+            except Exception as e:
+                errors.append(f'HTML: {e}')
+
+        if errors:
+            QMessageBox.warning(self, '导出失败', '\n'.join(errors))
+
+        if saved:
+            self._export_status_lbl.setText(f'✓ 已保存到 {directory}')
+            QTimer.singleShot(3000, lambda: self._export_status_lbl.setText(''))
 
     def _set_result_filter(self, key: str):
         if self._active_filter == key:
@@ -1001,6 +1081,7 @@ class VerifyTab(QWidget):
                 row.show()
             else:
                 row.setVisible(row._result.status == self._active_filter)
+        self._update_export_btn()
         QTimer.singleShot(300, self._loading_overlay.hide)
 
     def _clear_results(self):
