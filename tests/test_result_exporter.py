@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import openpyxl
 from app.core.verify_handler import PersonResult, FieldResult
-from app.core.result_exporter import export_excel
+from app.core.result_exporter import export_excel, export_html
 
 
 def _sample_results() -> list[PersonResult]:
@@ -81,3 +81,62 @@ def test_excel_sheet2_match_symbols():
         match_col = [r[5] for r in rows[1:] if r[5] in ('✓', '✗')]
         assert '✓' in match_col
         assert '✗' in match_col
+
+
+def test_html_creates_valid_file():
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / 'out.html'
+        export_html(_sample_results(), path, config_summary='测试摘要')
+        content = path.read_text(encoding='utf-8')
+        assert content.startswith('<!DOCTYPE html>')
+        assert '测试摘要' in content
+        assert '张三' in content
+        assert '李四' in content
+        assert 'class="badge ok"' in content
+        assert 'class="badge diff"' in content
+        assert 'class="badge not_found"' in content
+        assert 'class="badge error"' in content
+
+
+def test_html_diff_highlighting():
+    results = [PersonResult(
+        name='测试人', lrmx_path='x.lrmx', status='diff',
+        fields=[FieldResult(
+            field='ChuShengNianYue',
+            excel_val='1990-01',
+            lrmx_val='1990.01',
+            match=False,
+        )],
+    )]
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / 'out.html'
+        export_html(results, path)
+        content = path.read_text(encoding='utf-8')
+        assert 'class="del"' in content
+        assert 'class="ins"' in content
+
+
+def test_html_diff_open_by_default():
+    """'有差异'的 details 块默认 open，'一致'的不展开。"""
+    results = _sample_results()
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / 'out.html'
+        export_html(results, path)
+        content = path.read_text(encoding='utf-8')
+        # diff entry should have <details open>
+        assert '<details open>' in content
+        # ok entry should just be <details>
+        assert '<details>' in content
+
+
+def test_html_not_found_and_error_note():
+    results = [
+        PersonResult(name='王五', lrmx_path='c.lrmx', status='not_found'),
+        PersonResult(name='赵六', lrmx_path='d.lrmx', status='error', error_msg='文件损坏'),
+    ]
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / 'out.html'
+        export_html(results, path)
+        content = path.read_text(encoding='utf-8')
+        assert '未找到匹配记录' in content
+        assert '文件损坏' in content
