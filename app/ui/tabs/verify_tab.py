@@ -329,10 +329,13 @@ class _FieldRow(QWidget):
         name_lbl.setFixedWidth(180)
         layout.addWidget(name_lbl)
 
+        layout.addStretch(1)
+
         self._map_lbl = QLabel('未匹配')
         self._map_lbl.setObjectName('fieldRowUnmapped')
-        self._map_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        layout.addWidget(self._map_lbl, 1)
+        layout.addWidget(self._map_lbl)
+
+        layout.addStretch(1)
 
         self._remove_btn = QPushButton('✕')
         self._remove_btn.setObjectName('fileItemRemove')
