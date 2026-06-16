@@ -436,12 +436,12 @@ QLabel#resultName {{
     color: #1A1A1A;
     font-weight: 600;
 }}
-QTextEdit#diffDetail {{
+QWidget#diffPanel {{
     background: #FAFAF8;
-    border: none;
     border-top: 1px solid #E8E4DE;
-    border-radius: 0;
-    font-size: 12px;
+}}
+QWidget#diffHeader {{
+    background: #F5F2EE;
 }}
 QFrame#resultSep {{
     color: #EEECEA;

@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import difflib
+import html as _html_lib
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem, QLineEdit,
-    QRadioButton, QButtonGroup, QTextEdit, QFileDialog,
+    QRadioButton, QButtonGroup, QFileDialog,
     QSizePolicy, QMenu, QDialog, QProgressBar, QFrame,
     QScrollArea, QSpinBox, QLayout,
 )
@@ -12,59 +15,115 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, 
 
 from app.core.excel_handler import MatchMode
 from app.core.verify_handler import (
-    VerifyHandler, PersonResult, read_excel_headers, get_lrmx_fields, char_diff_html,
+    VerifyHandler, PersonResult, FieldResult, read_excel_headers, get_lrmx_fields,
 )
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
-_DIFF_STYLE = """
-<style>
-  body { font-family: "Microsoft YaHei UI", "PingFang SC", sans-serif;
-         font-size: 12px; background: #FAFAF8; color: #1A1A1A; margin: 0; }
-  table { border-collapse: collapse; width: 100%; }
-  th { font-size: 11px; color: #888880; text-align: left; padding: 5px 10px;
-       border-bottom: 1px solid #E8E4DE; background: #F5F2EE; font-weight: 500; }
-  td { padding: 5px 10px; border-bottom: 1px solid #F0EDEA;
-       vertical-align: middle; word-break: break-all; color: #333330; }
-  .field { color: #888880; width: 160px; font-size: 11px; }
-  .del   { background: #FDEAEA; color: #B02020; border-radius: 2px; padding: 0 2px; }
-  .ins   { background: #E8F5EC; color: #1E7A3A; border-radius: 2px; padding: 0 2px; }
-  .same  { color: #AAAAAA; font-style: italic; font-size: 11px; }
-  tr.diff-row td { background: #FFFAF8; }
-  .footer { font-size: 10px; color: #AAAAAA; padding: 5px 10px;
-            border-top: 1px solid #E8E4DE; }
-</style>
-"""
+class _DiffPanel(QWidget):
+    """Native-widget diff panel — replaces the HTML QTextEdit approach."""
 
+    _DEL = 'background:#FDEAEA;color:#B02020;border-radius:2px;padding:0 2px'
+    _INS = 'background:#E8F5EC;color:#1E7A3A;border-radius:2px;padding:0 2px'
 
-def _build_detail_html(result: PersonResult, field_mapping: dict[str, str]) -> str:
-    import html as _html_mod
-    rows_html = []
-    for fr in result.fields:
+    def __init__(self, result: PersonResult, parent=None):
+        super().__init__(parent)
+        self.setObjectName('diffPanel')
+        self._build(result)
+
+    def _build(self, result: PersonResult):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── table header ──────────────────────────────────────────────────
+        hdr = QWidget()
+        hdr.setObjectName('diffHeader')
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(10, 5, 10, 5)
+        hl.setSpacing(0)
+        for text, color, w in [('字段', '#888880', 150),
+                                ('Excel 名册', '#2060A0', None),
+                                ('任免表', '#1E7A3A', None)]:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(f'color:{color};font-size:11px;font-weight:500;'
+                              f'background:transparent;')
+            if w:
+                lbl.setFixedWidth(w)
+            hl.addWidget(lbl, 0 if w else 1)
+        outer.addWidget(hdr)
+
+        hdr_sep = QFrame()
+        hdr_sep.setFrameShape(QFrame.Shape.HLine)
+        hdr_sep.setStyleSheet('color:#E8E4DE;')
+        outer.addWidget(hdr_sep)
+
+        # ── field rows ────────────────────────────────────────────────────
+        for fr in result.fields:
+            outer.addWidget(self._make_row(fr))
+            row_sep = QFrame()
+            row_sep.setFrameShape(QFrame.Shape.HLine)
+            row_sep.setStyleSheet('color:#F0EDEA;')
+            outer.addWidget(row_sep)
+
+        # ── footer ────────────────────────────────────────────────────────
+        ok_n  = sum(1 for f in result.fields if f.match)
+        err_n = sum(1 for f in result.fields if not f.match)
+        footer = QLabel(f'共核验 {len(result.fields)} 个字段 · 一致 {ok_n} · 差异 {err_n}')
+        footer.setStyleSheet('color:#AAAAAA;font-size:10px;padding:4px 10px;'
+                             'background:transparent;')
+        outer.addWidget(footer)
+
+    def _make_row(self, fr: FieldResult) -> QWidget:
+        row = QWidget()
+        if not fr.match:
+            row.setStyleSheet('QWidget{background:#FFFAF8;}')
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(10, 5, 10, 5)
+        rl.setSpacing(8)
+
+        field_lbl = QLabel(fr.field)
+        field_lbl.setFixedWidth(150)
+        field_lbl.setWordWrap(True)
+        field_lbl.setStyleSheet('color:#888880;font-size:11px;background:transparent;')
+        rl.addWidget(field_lbl)
+
         if fr.match:
-            val = _html_mod.escape(fr.lrmx_val, quote=False)
-            rows_html.append(
-                f'<tr><td class="field">{fr.field}</td>'
-                f'<td colspan="2"><span class="same">{val}（一致）</span></td></tr>'
-            )
+            val = _html_lib.escape(fr.lrmx_val or '', quote=False)
+            same = QLabel(f'<span style="color:#AAAAAA;font-style:italic">'
+                          f'{val}（一致）</span>')
+            same.setTextFormat(Qt.TextFormat.RichText)
+            same.setWordWrap(True)
+            same.setStyleSheet('background:transparent;')
+            rl.addWidget(same, 2)
         else:
-            a_html, b_html = char_diff_html(fr.excel_val, fr.lrmx_val)
-            rows_html.append(
-                f'<tr class="diff-row"><td class="field">{fr.field}</td>'
-                f'<td>{a_html}</td><td>{b_html}</td></tr>'
-            )
-    ok_count  = sum(1 for f in result.fields if f.match)
-    err_count = sum(1 for f in result.fields if not f.match)
-    body = '\n'.join(rows_html)
-    footer = f'共核验 {len(result.fields)} 个字段 · 一致 {ok_count} · 差异 {err_count}'
-    return (
-        f'{_DIFF_STYLE}'
-        f'<table><thead><tr><th>字段</th>'
-        f'<th style="color:#2060A0">Excel 名册</th>'
-        f'<th style="color:#1E7A3A">任免表</th></tr></thead>'
-        f'<tbody>{body}</tbody></table>'
-        f'<div class="footer">{footer}</div>'
-    )
+            a_html, b_html = self._diff_inline(fr.excel_val, fr.lrmx_val)
+            for html_str in (a_html, b_html):
+                lbl = QLabel(html_str)
+                lbl.setTextFormat(Qt.TextFormat.RichText)
+                lbl.setWordWrap(True)
+                lbl.setStyleSheet('font-size:12px;background:transparent;')
+                rl.addWidget(lbl, 1)
+
+        return row
+
+    @classmethod
+    def _diff_inline(cls, a: str, b: str) -> tuple[str, str]:
+        m = difflib.SequenceMatcher(None, a, b, autojunk=False)
+        ah, bh = [], []
+        for tag, i1, i2, j1, j2 in m.get_opcodes():
+            ea = _html_lib.escape(a[i1:i2], quote=False)
+            eb = _html_lib.escape(b[j1:j2], quote=False)
+            if tag == 'equal':
+                ah.append(ea); bh.append(eb)
+            elif tag == 'replace':
+                ah.append(f'<span style="{cls._DEL}">{ea}</span>')
+                bh.append(f'<span style="{cls._INS}">{eb}</span>')
+            elif tag == 'delete':
+                ah.append(f'<span style="{cls._DEL}">{ea}</span>')
+            elif tag == 'insert':
+                bh.append(f'<span style="{cls._INS}">{eb}</span>')
+        return ''.join(ah), ''.join(bh)
 
 
 # ── background workers ────────────────────────────────────────────────────────
@@ -548,12 +607,10 @@ class _MappingWidget(QWidget):
 # ── result widgets ────────────────────────────────────────────────────────────
 
 class _ResultRow(QWidget):
-    def __init__(self, result: PersonResult, field_mapping: dict[str, str], parent=None):
+    def __init__(self, result: PersonResult, parent=None):
         super().__init__(parent)
         self._result = result
-        self._field_mapping = field_mapping
         self._expanded = False
-        self._html_loaded = False
         self._build_ui()
 
     def _build_ui(self):
@@ -566,7 +623,7 @@ class _ResultRow(QWidget):
         self._header.setObjectName('resultRowHeader')
         self._header.setCursor(Qt.CursorShape.PointingHandCursor)
         hl = QHBoxLayout(self._header)
-        hl.setContentsMargins(10, 6, 10, 6)
+        hl.setContentsMargins(10, 7, 10, 7)
         hl.setSpacing(6)
 
         self._arrow = QLabel('▶')
@@ -581,30 +638,25 @@ class _ResultRow(QWidget):
 
         status = self._result.status
         if status == 'ok':
-            badge_text = '一致'
-            color = '#1E7A3A'
+            badge_text, color = '一致', '#1E7A3A'
         elif status == 'diff':
             n_diff = sum(1 for f in self._result.fields if not f.match)
-            badge_text = f'{n_diff} 处差异'
-            color = '#B02020'
+            badge_text, color = f'{n_diff} 处差异', '#B02020'
         elif status == 'not_found':
-            badge_text = '名册无此人'
-            color = '#C07030'
+            badge_text, color = '名册无此人', '#C07030'
         else:
-            badge_text = '错误'
-            color = '#888880'
+            badge_text, color = '错误', '#888880'
 
         badge = QLabel(badge_text)
-        badge.setStyleSheet(f'color: {color}; font-size: 11px; font-weight: 600;')
+        badge.setStyleSheet(f'color:{color};font-size:11px;font-weight:600;')
         hl.addWidget(badge)
 
         outer.addWidget(self._header)
 
-        self._detail = QTextEdit()
-        self._detail.setObjectName('diffDetail')
-        self._detail.setReadOnly(True)
-        self._detail.hide()
-        outer.addWidget(self._detail)
+        # Diff panel (native widgets — auto-sizes, no HTML QTextEdit)
+        self._diff_panel = _DiffPanel(self._result)
+        self._diff_panel.hide()
+        outer.addWidget(self._diff_panel)
 
         sep = QFrame()
         sep.setObjectName('resultSep')
@@ -619,12 +671,7 @@ class _ResultRow(QWidget):
             return
         self._expanded = not self._expanded
         self._arrow.setText('▼' if self._expanded else '▶')
-        if self._expanded and not self._html_loaded:
-            self._detail.setHtml(_build_detail_html(self._result, self._field_mapping))
-            self._html_loaded = True
-            doc_h = int(self._detail.document().size().height()) + 16
-            self._detail.setFixedHeight(max(80, min(400, doc_h)))
-        self._detail.setVisible(self._expanded)
+        self._diff_panel.setVisible(self._expanded)
 
 
 # ── main tab ──────────────────────────────────────────────────────────────────
@@ -1047,7 +1094,7 @@ class VerifyTab(QWidget):
         self._counts[status] += 1
         self._count_labels[status].setText(str(self._counts[status]))
 
-        row_widget = _ResultRow(result, self._mapping_widget.get_mapping())
+        row_widget = _ResultRow(result)
         idx = self._result_vbox.count() - 1
         self._result_vbox.insertWidget(idx, row_widget)
 
