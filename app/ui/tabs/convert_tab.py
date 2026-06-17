@@ -85,7 +85,7 @@ class ConvertTab(QWidget):
     USES_FILE_PANEL: bool = True
     busy_changed = Signal(bool)
 
-    def __init__(self, file_panel: 'LrmxFilePanel', parent=None):
+    def __init__(self, file_panel: LrmxFilePanel, parent=None):
         super().__init__(parent)
         self._settings = QSettings('rmb_helper', 'rmb_helper')
         self._worker = None
