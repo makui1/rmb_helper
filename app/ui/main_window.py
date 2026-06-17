@@ -3,10 +3,11 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QStackedWidget, QFrame, QSplitter,
+    QApplication,
 )
 from PySide6.QtCore import Qt, QPoint, QSize, QEvent
+from PySide6.QtGui import QIcon, QCursor
 from app.ui.widgets.file_panel import LrmxFilePanel
-from PySide6.QtGui import QIcon
 
 from app.ui.style import QSS
 from app.ui.tabs.settings_tab import SettingsTab
@@ -140,11 +141,12 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
         self.setStyleSheet(QSS)
-        self.setMouseTracking(True)
         self._sidebar_container: QWidget | None = None
         self._title_bar: _TitleBar | None = None
         self._file_panel: LrmxFilePanel | None = None
+        self._resize_cursor_set: bool = False
         self._build_ui()
+        QApplication.instance().installEventFilter(self)
 
     def _build_ui(self):
         root_widget = QWidget()
@@ -265,23 +267,39 @@ class MainWindow(QMainWindow):
         if y > h - m:  edges |= Qt.Edge.BottomEdge
         return edges
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            edges = self._edge_at(event.position().toPoint())
-            if edges:
-                wh = self.windowHandle()
-                if wh:
-                    wh.startSystemResize(edges)
-                return
-        super().mousePressEvent(event)
+    def eventFilter(self, watched, event):
+        t = event.type()
+        if t == QEvent.Type.MouseMove:
+            local = self.mapFromGlobal(event.globalPosition().toPoint())
+            if not self.isMaximized() and self.rect().contains(local):
+                edges = self._edge_at(local)
+                if edges:
+                    shape = self._CURSOR_MAP.get(edges, Qt.CursorShape.ArrowCursor)
+                    if self._resize_cursor_set:
+                        QApplication.changeOverrideCursor(QCursor(shape))
+                    else:
+                        QApplication.setOverrideCursor(QCursor(shape))
+                        self._resize_cursor_set = True
+                else:
+                    self._clear_resize_cursor()
+            else:
+                self._clear_resize_cursor()
+        elif t == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton and not self.isMaximized():
+                local = self.mapFromGlobal(event.globalPosition().toPoint())
+                if self.rect().contains(local):
+                    edges = self._edge_at(local)
+                    if edges:
+                        wh = self.windowHandle()
+                        if wh:
+                            wh.startSystemResize(edges)
+                        return True
+        return False
 
-    def mouseMoveEvent(self, event):
-        if not self.isMaximized():
-            edges = self._edge_at(event.position().toPoint())
-            self.setCursor(self._CURSOR_MAP.get(edges, Qt.CursorShape.ArrowCursor))
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-        super().mouseMoveEvent(event)
+    def _clear_resize_cursor(self):
+        if self._resize_cursor_set:
+            QApplication.restoreOverrideCursor()
+            self._resize_cursor_set = False
 
     def toggle_sidebar(self):
         if self._sidebar_container:
