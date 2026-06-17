@@ -18,19 +18,14 @@
         <mainClass>com.rmb.docx2pdf.Main</mainClass>
     </properties>
 
-    <!-- 项目内嵌本地仓库，存放无法从中央仓库获取的 JAR -->
-    <repositories>
-        <repository>
-            <id>local-lib</id>
-            <url>file://${project.basedir}/local-repo</url>
-        </repository>
-    </repositories>
-
     <dependencies>
+        <!-- Aspose.Words — 本地 JAR，通过 system scope 引用 -->
         <dependency>
             <groupId>com.aspose</groupId>
             <artifactId>aspose-words</artifactId>
             <version>19.5</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/aspose-words-19.5jdk.jar</systemPath>
         </dependency>
     </dependencies>
 
@@ -48,32 +43,25 @@
                 </configuration>
             </plugin>
 
-            <!-- fat JAR：所有依赖打进一个文件 -->
+            <!-- 将所有依赖（含 system scope）打进一个 fat JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.3</version>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
-                        <goals><goal>shade</goal></goals>
+                        <goals><goal>single</goal></goals>
                         <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <archive>
+                                <manifest>
                                     <mainClass>${mainClass}</mainClass>
-                                </transformer>
-                            </transformers>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
+                                </manifest>
+                            </archive>
+                            <!-- 使用自定义描述符，以便同时包含 system scope 的 Aspose JAR -->
+                            <descriptors>
+                                <descriptor>src/assembly/fat-jar.xml</descriptor>
+                            </descriptors>
                         </configuration>
                     </execution>
                 </executions>
@@ -90,9 +78,10 @@
                         <phase>package</phase>
                         <goals><goal>launch4j</goal></goals>
                         <configuration>
+                            <!-- console 模式：stdout/stderr 正常输出，适合子进程调用 -->
                             <headerType>console</headerType>
                             <outfile>${project.build.directory}/docx2pdf.exe</outfile>
-                            <jar>${project.build.directory}/${project.artifactId}-${project.version}.jar</jar>
+                            <jar>${project.build.directory}/${project.artifactId}-${project.version}-fat-jar.jar</jar>
                             <errTitle>docx2pdf</errTitle>
                             <jre>
                                 <minVersion>21</minVersion>
