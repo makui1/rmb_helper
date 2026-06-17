@@ -1313,6 +1313,7 @@ class VerifyTab(QWidget):
                 item.widget().deleteLater()
 
     def _back_to_setup(self):
+        self.busy_changed.emit(False)
         self._loading_overlay.hide()
         self._update_loading_overlay.hide()
         if self._update_worker and self._update_worker.isRunning():
