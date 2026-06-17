@@ -58,9 +58,10 @@
                                     <mainClass>${mainClass}</mainClass>
                                 </manifest>
                             </archive>
-                            <descriptorRefs>
-                                <descriptorRef>jar-with-dependencies</descriptorRef>
-                            </descriptorRefs>
+                            <!-- 使用自定义描述符，以便同时包含 system scope 的 Aspose JAR -->
+                            <descriptors>
+                                <descriptor>src/assembly/fat-jar.xml</descriptor>
+                            </descriptors>
                         </configuration>
                     </execution>
                 </executions>
@@ -80,7 +81,7 @@
                             <!-- console 模式：stdout/stderr 正常输出，适合子进程调用 -->
                             <headerType>console</headerType>
                             <outfile>${project.build.directory}/docx2pdf.exe</outfile>
-                            <jar>${project.build.directory}/${project.artifactId}-${project.version}-jar-with-dependencies.jar</jar>
+                            <jar>${project.build.directory}/${project.artifactId}-${project.version}-fat-jar.jar</jar>
                             <errTitle>docx2pdf</errTitle>
                             <jre>
                                 <minVersion>21</minVersion>
