@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QCheckBox, QMessageBox,
     QRadioButton, QButtonGroup, QFileDialog,
     QSizePolicy, QFrame,
-    QScrollArea, QSpinBox, QLayout, QSplitter,
+    QScrollArea, QSpinBox, QLayout,
     QDialog, QGridLayout,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QRect, QPoint, QTimer
@@ -739,7 +739,10 @@ class _ResultRow(QWidget):
 # ── main tab ──────────────────────────────────────────────────────────────────
 
 class VerifyTab(QWidget):
-    def __init__(self, parent=None):
+    USES_FILE_PANEL: bool = True
+    busy_changed = Signal(bool)
+
+    def __init__(self, file_panel: LrmxFilePanel, parent=None):
         super().__init__(parent)
         self._worker = None
         self._update_worker = None
@@ -750,7 +753,9 @@ class VerifyTab(QWidget):
         self._update_counts = {'ok': 0, 'not_found': 0, 'error': 0}
         self._update_log_rows: list[_UpdateLogRow] = []
         self._update_active_filter: str | None = None
+        self._file_panel = file_panel
         self._build_ui()
+        self._file_panel.files_changed.connect(self._on_files_changed)
         self.setAcceptDrops(True)
 
     def _build_ui(self):
@@ -774,23 +779,11 @@ class VerifyTab(QWidget):
         sub.setStyleSheet('color: #888880; font-size: 12px;')
         sp.addWidget(sub)
 
-        # ── 分割器：上方文件面板 / 下方控件 ──────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setChildrenCollapsible(False)
-        sp.addWidget(splitter, 1)
-
-        self._file_panel = LrmxFilePanel()
-        splitter.addWidget(self._file_panel)
-        self._file_panel.files_changed.connect(self._on_files_changed)
-
         bottom_pane = QWidget()
         bot_layout = QVBoxLayout(bottom_pane)
         bot_layout.setContentsMargins(0, 0, 0, 0)
         bot_layout.setSpacing(12)
-        splitter.addWidget(bottom_pane)
-
-        splitter.setSizes([140, 400])
-        splitter.setHandleWidth(4)
+        sp.addWidget(bottom_pane, 1)
 
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
@@ -1184,6 +1177,7 @@ class VerifyTab(QWidget):
         self._worker = _VerifyWorker(handler)
         self._worker.result_ready.connect(self._on_result)
         self._worker.finished.connect(self._on_finished)
+        self.busy_changed.emit(True)
         self._worker.start()
 
     def _run_update(self):
@@ -1253,6 +1247,7 @@ class VerifyTab(QWidget):
         self._update_worker.log.connect(self._on_update_log)
         self._update_worker.critical.connect(self._on_update_critical)
         self._update_worker.finished.connect(self._on_update_finished)
+        self.busy_changed.emit(True)
         self._update_worker.start()
 
     def _on_update_log(self, message: str):
@@ -1279,11 +1274,13 @@ class VerifyTab(QWidget):
             row.setVisible(show)
 
     def _on_update_critical(self, msg: str):
+        self.busy_changed.emit(False)
         self._update_loading_overlay.hide()
         QMessageBox.critical(self, 'Excel 读取失败', msg)
         self._back_to_setup()
 
     def _on_update_finished(self):
+        self.busy_changed.emit(False)
         QTimer.singleShot(400, self._update_loading_overlay.hide)
         ok = self._update_counts['ok']
         not_found = self._update_counts['not_found']
@@ -1345,6 +1342,7 @@ class VerifyTab(QWidget):
         self._result_vbox.insertWidget(idx, row_widget)
 
     def _on_finished(self):
+        self.busy_changed.emit(False)
         QTimer.singleShot(400, self._loading_overlay.hide)
         self._update_export_btn()
 
