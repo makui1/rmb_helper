@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -13,6 +14,38 @@ from app.ui.style import QSS
 from app.ui.tabs.settings_tab import SettingsTab
 
 _ASSETS = Path(__file__).parent / 'assets'
+
+if sys.platform == 'win32':
+    import ctypes
+    import ctypes.wintypes as _wt
+
+    class _MSG(ctypes.Structure):
+        _fields_ = [
+            ('hWnd',    _wt.HWND),
+            ('message', _wt.UINT),
+            ('wParam',  _wt.WPARAM),
+            ('lParam',  _wt.LPARAM),
+            ('time',    _wt.DWORD),
+            ('pt',      _wt.POINT),
+        ]
+
+    _WM_NCHITTEST  = 0x0084
+    _WM_SYSCOMMAND = 0x0112
+    _SC_MINIMIZE   = 0xF020
+    _SC_MAXIMIZE   = 0xF030
+    _SC_RESTORE    = 0xF120
+
+    _HTCLIENT      = 1
+    _HTCAPTION     = 2
+    _HTMAXBUTTON   = 9
+    _HTLEFT        = 10
+    _HTRIGHT       = 11
+    _HTTOP         = 12
+    _HTTOPLEFT     = 13
+    _HTTOPRIGHT    = 14
+    _HTBOTTOM      = 15
+    _HTBOTTOMLEFT  = 16
+    _HTBOTTOMRIGHT = 17
 
 
 class _TitleBar(QWidget):
@@ -146,7 +179,8 @@ class MainWindow(QMainWindow):
         self._file_panel: LrmxFilePanel | None = None
         self._resize_cursor_set: bool = False
         self._build_ui()
-        QApplication.instance().installEventFilter(self)
+        if sys.platform != 'win32':
+            QApplication.instance().installEventFilter(self)
 
     def _build_ui(self):
         root_widget = QWidget()
@@ -244,6 +278,45 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.Type.WindowStateChange and self._title_bar:
             self._title_bar.set_maximized(self.isMaximized())
         super().changeEvent(event)
+
+    def nativeEvent(self, event_type, message):
+        if sys.platform == 'win32':
+            import ctypes
+            msg = _MSG.from_address(int(message))
+
+            if msg.message == _WM_NCHITTEST:
+                sx = ctypes.c_short(msg.lParam & 0xFFFF).value
+                sy = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+                local = self.mapFromGlobal(QPoint(sx, sy))
+                x, y, w, h, m = local.x(), local.y(), self.width(), self.height(), 8
+
+                if not self.isMaximized():
+                    if x < m and y < m:        return True, _HTTOPLEFT
+                    if x > w-m and y < m:      return True, _HTTOPRIGHT
+                    if x < m and y > h-m:      return True, _HTBOTTOMLEFT
+                    if x > w-m and y > h-m:    return True, _HTBOTTOMRIGHT
+                    if x < m:                  return True, _HTLEFT
+                    if x > w-m:                return True, _HTRIGHT
+                    if y < m:                  return True, _HTTOP
+                    if y > h-m:                return True, _HTBOTTOM
+
+                if self._title_bar and y <= self._title_bar.height():
+                    tb_pos = self._title_bar.mapFromGlobal(QPoint(sx, sy))
+                    child = self._title_bar.childAt(tb_pos)
+                    # 只有 QPushButton 保留 HTCLIENT 让 Qt 处理点击
+                    # Label / Frame / 空白区域全部返回 HTCAPTION 让 Windows 处理拖拽 & Snap
+                    if isinstance(child, QPushButton):
+                        return True, _HTCLIENT
+                    return True, _HTCAPTION
+
+                return True, _HTCLIENT
+
+            elif msg.message == 0x00A3:  # WM_NCLBUTTONDBLCLK
+                if msg.wParam == _HTCAPTION:
+                    self.toggle_maximize()
+                    return True, 0
+
+        return super().nativeEvent(event_type, message)
 
     _RESIZE_MARGIN = 8
 

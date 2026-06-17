@@ -1,11 +1,23 @@
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
+*.egg-info/
+
+# 虚拟环境 & 依赖
 .venv/
 .env
-*.egg-info/
+
+# 构建产物
 dist/
 build/
+*.exe
+
+# 测试 & 工具缓存
 .pytest_cache/
+.idea/
+.superpowers/
+
+# 项目临时文件
 *.lrmx.bak
 *.tmp
