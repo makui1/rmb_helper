@@ -1,3 +1,4 @@
+import shutil
 import time
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -9,7 +10,7 @@ from PySide6.QtCore import Qt, QSettings, QThread, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.core.lrmx import LrmxFile
-from app.core.docx_exporter import DocxExporter
+from app.core.docx_exporter import DocxExporter, get_template_path
 from app.core.pdf_exporter import PdfExporter, detect_engine, PdfEngine
 from app.utils.naming import apply_rule, PRESETS
 from app.ui.widgets.file_panel import LrmxFilePanel
@@ -21,7 +22,7 @@ class _Worker(QThread):
     log = Signal(str)                   # message (prefixed with ✓ / △ / ✗)
     finished = Signal(int, int, float)  # done, total, elapsed_seconds
 
-    def __init__(self, files, output_dir, naming_rule, do_docx, do_pdf, template_path,
+    def __init__(self, files, output_dir, naming_rule, do_docx, do_pdf,
                  sibling_dir=False):
         super().__init__()
         self.files = files
@@ -29,13 +30,18 @@ class _Worker(QThread):
         self.naming_rule = naming_rule
         self.do_docx = do_docx
         self.do_pdf = do_pdf
-        self.template_path = template_path
         self.sibling_dir = sibling_dir
 
     def run(self):
-        from collections import defaultdict
         start = time.monotonic()
         total = len(self.files)
+
+        try:
+            template_path = get_template_path()
+        except FileNotFoundError as e:
+            self.log.emit(f'✗ {e}')
+            self.finished.emit(0, total, 0.0)
+            return
 
         pdf_exporter = PdfExporter()
         pdf_available = False
@@ -44,66 +50,43 @@ class _Worker(QThread):
             if not pdf_available:
                 self.log.emit('△ 未检测到可用 PDF 渲染引擎，PDF 输出已跳过')
 
-        # (index, docx_path, out_dir, stem, is_temporary)
-        pdf_queue: list[tuple[int, Path, Path, str, bool]] = []
         succeeded: list[bool] = [False] * total
+        tmp_dirs: set[Path] = set()
 
-        # ── Phase 1: LRMX → DOCX ─────────────────────────────────────────────
         for idx, lrmx_path in enumerate(self.files):
+            num = f'({idx + 1}/{total})'
             try:
                 lf = LrmxFile(Path(lrmx_path))
                 stem = apply_rule(self.naming_rule, lf.as_dict()) or Path(lrmx_path).stem
                 out_dir = Path(lrmx_path).parent if self.sibling_dir else self.output_dir
 
-                if not self.template_path:
-                    self.log.emit(f'✗ {stem}：未配置模板路径')
-                    continue
-
                 if self.do_docx:
                     docx_path = out_dir / (stem + '.docx')
-                    DocxExporter(self.template_path).export(lf, docx_path)
-                    self.log.emit(f'✓ {stem} → docx 完成')
+                    DocxExporter(template_path).export(lf, docx_path)
+                    self.log.emit(f'✓ {stem} → docx 完成 {num}')
                     if self.do_pdf and pdf_available:
-                        pdf_queue.append((idx, docx_path, out_dir, stem, False))
-                    else:
-                        succeeded[idx] = True
+                        pdf_exporter.export(docx_path, out_dir)
+                        self.log.emit(f'✓ {stem} → pdf 完成 {num}')
+                    succeeded[idx] = True
 
                 elif self.do_pdf and pdf_available:
-                    tmp = out_dir / f'_tmp_{stem}.docx'
-                    DocxExporter(self.template_path).export(lf, tmp)
-                    pdf_queue.append((idx, tmp, out_dir, stem, True))
+                    tmp_dir = out_dir / '.tmp_docx'
+                    tmp_dirs.add(tmp_dir)
+                    tmp_dir.mkdir(parents=True, exist_ok=True)
+                    tmp_docx = tmp_dir / (stem + '.docx')
+                    DocxExporter(template_path).export(lf, tmp_docx)
+                    pdf_exporter.export(tmp_docx, out_dir)
+                    self.log.emit(f'✓ {stem} → pdf 完成 {num}')
+                    succeeded[idx] = True
 
                 else:
                     succeeded[idx] = True
 
             except Exception as e:
-                self.log.emit(f'✗ {Path(lrmx_path).name}: {e}')
+                self.log.emit(f'✗ {Path(lrmx_path).name}: {e} {num}')
 
-        # ── Phase 2: 批量 PDF 转换（实时进度回调）────────────────────────────
-        if pdf_queue:
-            groups: dict[Path, list[tuple[int, Path, str, bool]]] = defaultdict(list)
-            for idx, docx, out_dir, stem, is_tmp in pdf_queue:
-                groups[out_dir].append((idx, docx, stem, is_tmp))
-
-            for out_dir, tasks in groups.items():
-                # stem_map: docx路径 → (idx, display_stem, is_tmp)
-                stem_map = {docx: (idx, stem, is_tmp) for idx, docx, stem, is_tmp in tasks}
-
-                def on_progress(inp: Path, pdf, err: str,
-                                _sm=stem_map, _succeeded=succeeded):
-                    if inp not in _sm:
-                        return
-                    idx, stem, is_tmp = _sm[inp]
-                    if pdf is not None:
-                        self.log.emit(f'✓ {stem} → pdf 完成')
-                        _succeeded[idx] = True
-                    else:
-                        self.log.emit(f'✗ {stem} → pdf 失败：{err}')
-                    if is_tmp:
-                        inp.unlink(missing_ok=True)
-
-                docx_paths = [t[1] for t in tasks]
-                pdf_exporter.export_batch(docx_paths, out_dir, on_progress=on_progress)
+        for tmp_dir in tmp_dirs:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
         done = sum(succeeded)
         self.finished.emit(done, total, time.monotonic() - start)
@@ -260,10 +243,10 @@ class ConvertTab(QWidget):
     def _on_pdf_toggled(self, checked: bool):
         if checked:
             engine = detect_engine()
-            if engine == PdfEngine.ASPOSE:
-                self._pdf_hint.setText('将使用 Aspose.Words 高质量转换，所有文件共用一次 JVM 启动')
+            if engine == PdfEngine.SPIRE:
+                self._pdf_hint.setText('将使用 Spire.Doc Free 转换（注意：免费版超过3页会加水印）')
             elif engine == PdfEngine.NONE:
-                self._pdf_hint.setText('未检测到可用引擎，请先构建 docx2pdf.exe 或安装 WPS / Office / LibreOffice')
+                self._pdf_hint.setText('未检测到可用引擎，请运行 pip install spire-doc-free 或安装 WPS / Office / LibreOffice')
             else:
                 self._pdf_hint.setText(f'将使用 {engine.name} 转换，速度较慢')
         self._pdf_hint.setVisible(checked)
@@ -338,7 +321,6 @@ class ConvertTab(QWidget):
             else self._rule_combo.currentText()
         ) or PRESETS[0][0]
 
-        template_path = self._settings.value('template_path', '')
         self._run_btn.setEnabled(False)
         self._log.clear()
         self._log_entries.clear()
@@ -349,7 +331,6 @@ class ConvertTab(QWidget):
             naming_rule=naming_rule,
             do_docx=self._chk_docx.isChecked(),
             do_pdf=self._chk_pdf.isChecked(),
-            template_path=template_path,
             sibling_dir=sibling,
         )
         self._worker.log.connect(self._append_log)

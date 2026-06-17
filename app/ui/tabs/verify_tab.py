@@ -867,7 +867,7 @@ class VerifyTab(QWidget):
         run_row.addStretch()
         self._update_btn = QPushButton('开始更新')
         self._update_btn.setIcon(QIcon(str(_ASSETS / 'update.svg')))
-        self._update_btn.setIconSize(QSize(16, 16))
+        self._update_btn.setIconSize(QSize(14, 14))
         self._update_btn.setEnabled(False)
         self._update_btn.clicked.connect(self._run_update)
         run_row.addWidget(self._update_btn)

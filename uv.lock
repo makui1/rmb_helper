@@ -328,6 +328,15 @@ wheels = [
 ]
 
 [[package]]
+name = "plum-dispatch"
+version = "1.7.4"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/39/4e/f4d6b2bd80a9880989d37773f0f2e3a91a2d5352732e4ebb68b5606bca83/plum-dispatch-1.7.4.tar.gz", hash = "sha256:1c1d15b2842b5fa98405fd3dff6fad4887bdc77b60bd200e209d76ebfe9990fe", size = 56429, upload-time = "2022-10-21T06:29:20.747Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e6/b6/3aaa985591c63da64c7bd8c5f470442a4c00b37ad3ed057f21de14174f83/plum_dispatch-1.7.4-py3-none-any.whl", hash = "sha256:c40dbeab269bbbf972ce0dbc078380da19ebaee1a370a2c564e1814a11bde216", size = 24238, upload-time = "2022-10-21T06:29:19.054Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.20.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -507,6 +516,7 @@ dependencies = [
     { name = "pyside6" },
     { name = "python-docx" },
     { name = "pywin32" },
+    { name = "spire-doc-free" },
 ]
 
 [package.dev-dependencies]
@@ -524,6 +534,7 @@ requires-dist = [
     { name = "pyside6", specifier = "==6.11.0" },
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "pywin32", specifier = "==312" },
+    { name = "spire-doc-free", specifier = ">=12.12.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -551,6 +562,19 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f5/96/771a6e2b530f725303d16d78a321fa4876b98b4f3615c9851880df8c1a43/shiboken6-6.11.0-cp310-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:a10dc7718104ea2dc15d5b0b96909b77162ce1c76fcc6968e6df692b947a00e9", size = 267456, upload-time = "2026-03-23T12:47:08.689Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/72/f7/44c0c42c3f5f29dec457fd46ea0552174bcb8aa75becf03bbd90308ba07b/shiboken6-6.11.0-cp310-abi3-win_amd64.whl", hash = "sha256:483ff78a73c7b3189ca924abc694318084f078bcfeaffa68e32024ff2d025ee1", size = 1222132, upload-time = "2026-03-23T12:47:10.143Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fb/99/6e5ee21db2d6af84bbbd7d871d441dafeb069c6de5667b1aa49891a77c66/shiboken6-6.11.0-cp310-abi3-win_arm64.whl", hash = "sha256:3bd76cf56105ab2d62ecaff630366f11264f69b88d488f10f048da9a065781f4", size = 1783186, upload-time = "2026-03-23T12:47:11.832Z" },
+]
+
+[[package]]
+name = "spire-doc-free"
+version = "12.12.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "plum-dispatch" },
+]
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/89/aa/64e8d6a9a6c75fd62917294d5028fff8e88aa0188495eb030a74832eb8c9/Spire.Doc.Free-12.12.0-py3-none-macosx_10_7_universal.whl", hash = "sha256:eb756d125b28b8b56d1df71d29cef5cfc41e10e630d5b7bacb2b854e7d8e5836", size = 52877813, upload-time = "2025-01-16T03:36:36.234Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ac/04/3d2897fffacc597ad2656da771c2ed8b5386a8c874ab4def383b4ec7fb5e/Spire.Doc.Free-12.12.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:ccc350955a08906717a4fd5fac220a27269180a79f8aec07f604fbe16039517c", size = 44096976, upload-time = "2025-01-16T03:36:54.888Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a3/f0/163b723883358d1dab930bf042fa4f681dd8ae9fdfe76f2ed1afb675fdcb/Spire.Doc.Free-12.12.0-py3-none-win_amd64.whl", hash = "sha256:f26e99ded7e0c321edd8afaea319cf62548edfeb5cde84a5ca3f8bc2b4daeaea", size = 28087785, upload-time = "2025-01-16T03:35:30.002Z" },
 ]
 
 [[package]]

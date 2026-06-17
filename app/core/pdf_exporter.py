@@ -1,13 +1,12 @@
 import shutil
 import subprocess
 import sys
-from collections import defaultdict
 from enum import Enum, auto
 from pathlib import Path
 
 
 class PdfEngine(Enum):
-    ASPOSE      = auto()   # Aspose.Words Java exe（最优先）
+    SPIRE       = auto()   # Spire.Doc Free (pip install spire-doc-free)
     LIBREOFFICE = auto()
     WPS_COM     = auto()   # WPS Office via Windows COM
     WORD_COM    = auto()   # Microsoft Word via Windows COM
@@ -27,22 +26,20 @@ def _winreg_has(prog_id: str) -> bool:
         return False
 
 
-def _find_aspose_exe() -> Path | None:
-    candidates = [
-        # 开发环境：项目根目录 / docx2pdf/target/
-        Path(__file__).parent.parent.parent / 'docx2pdf' / 'target' / 'docx2pdf.exe',
-        # 打包后：与主程序同级目录
-        Path(sys.executable).parent / 'docx2pdf.exe',
-    ]
-    return next((p for p in candidates if p.exists()), None)
+def _spire_available() -> bool:
+    try:
+        import spire.doc  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
 _WPS_PROG_IDS = ('WPS.Application', 'KSO.Application')
 
 
 def detect_engine() -> PdfEngine:
-    if _find_aspose_exe():
-        return PdfEngine.ASPOSE
+    if _spire_available():
+        return PdfEngine.SPIRE
     if shutil.which('libreoffice') or shutil.which('soffice'):
         return PdfEngine.LIBREOFFICE
     if sys.platform == 'win32':
@@ -58,25 +55,17 @@ def detect_engine() -> PdfEngine:
 class PdfExporter:
     def __init__(self) -> None:
         self.engine = detect_engine()
-        self._aspose_exe: Path | None = (
-            _find_aspose_exe() if self.engine == PdfEngine.ASPOSE else None
-        )
 
     def available(self) -> bool:
         return self.engine != PdfEngine.NONE
 
     def export(self, docx_path: Path, output_dir: Path) -> Path:
-        """单文件转换。Aspose 引擎建议用 export_batch() 以避免重复启动 JVM。"""
         docx_path  = Path(docx_path)
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if self.engine == PdfEngine.ASPOSE:
-            results = self._via_aspose_batch([docx_path], output_dir)
-            _, pdf, err = results[0]
-            if pdf is None:
-                raise RuntimeError(err)
-            return pdf
+        if self.engine == PdfEngine.SPIRE:
+            return self._via_spire(docx_path, output_dir)
         if self.engine == PdfEngine.LIBREOFFICE:
             return self._via_libreoffice(docx_path, output_dir)
         if self.engine == PdfEngine.WPS_COM:
@@ -85,22 +74,19 @@ class PdfExporter:
             return self._via_com(docx_path, output_dir, ('Word.Application',))
         if self.engine == PdfEngine.WPS_CLI:
             return self._via_wps_cli(docx_path, output_dir)
-        raise RuntimeError('未检测到可用的 PDF 渲染引擎，请构建 docx2pdf.exe 或安装 WPS / LibreOffice。')
+        raise RuntimeError('未检测到可用的 PDF 渲染引擎，请运行 pip install spire-doc-free 或安装 WPS / LibreOffice。')
 
     def export_batch(
         self,
         docx_paths: list[Path],
         output_dir: Path,
-        on_progress: 'Callable[[Path, Path | None, str], None] | None' = None,
+        on_progress=None,
     ) -> list[tuple[Path, Path | None, str]]:
         """批量转换。返回 [(输入路径, 输出PDF路径|None, 错误信息)] 列表。
         on_progress(inp, pdf, err) 在每个文件完成时实时回调（可选）。
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        if self.engine == PdfEngine.ASPOSE:
-            return self._via_aspose_batch(docx_paths, output_dir, on_progress)
 
         results = []
         for p in docx_paths:
@@ -115,64 +101,16 @@ class PdfExporter:
                     on_progress(p, None, str(e))
         return results
 
-    # ── Aspose / Spire (Java exe) ─────────────────────────────────────────────
+    # ── Spire.Doc Free (Python) ───────────────────────────────────────────────
 
-    def _via_aspose_batch(
-        self,
-        docx_paths: list[Path],
-        output_dir: Path,
-        on_progress: 'Callable[[Path, Path | None, str], None] | None' = None,
-    ) -> list[tuple[Path, Path | None, str]]:
-        proc = subprocess.Popen(
-            [str(self._aspose_exe), str(output_dir)] + [str(p) for p in docx_paths],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8', errors='replace',
-        )
-
-        # 建立 stem → 原始路径的反查表，用于 on_progress 回调
-        stem_map: dict[str, Path] = {p.stem.lower(): p for p in docx_paths}
-
-        ok_stems:  set[str]       = set()
-        err_stems: dict[str, str] = {}
-
-        # 逐行读取，实时回调
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line.startswith('OK '):
-                key = Path(line[3:].strip()).stem.lower()
-                ok_stems.add(key)
-                if on_progress and key in stem_map:
-                    p = stem_map[key]
-                    on_progress(p, output_dir / (p.stem + '.pdf'), '')
-            elif line.startswith('ERR '):
-                rest = line[4:]
-                sep = rest.find(': ')
-                if sep != -1:
-                    key = Path(rest[:sep]).stem.lower()
-                    err = rest[sep + 2:]
-                    err_stems[key] = err
-                    if on_progress and key in stem_map:
-                        on_progress(stem_map[key], None, err)
-
-        proc.wait()
-        stderr_content = proc.stderr.read()
-
-        def _diag() -> str:
-            parts = [f'exit={proc.returncode}']
-            if stderr_content:
-                parts.append('stderr: ' + stderr_content.strip()[:400])
-            return ' | '.join(parts) or '进程无任何输出'
-
-        results = []
-        for p in docx_paths:
-            key = p.stem.lower()
-            expected_pdf = output_dir / (p.stem + '.pdf')
-            if key in ok_stems or expected_pdf.exists():
-                results.append((p, expected_pdf, ''))
-            else:
-                err = err_stems.get(key) or _diag()
-                results.append((p, None, err))
-        return results
+    def _via_spire(self, docx_path: Path, output_dir: Path) -> Path:
+        from spire.doc import Document, FileFormat
+        pdf_path = output_dir / (docx_path.stem + '.pdf')
+        doc = Document()
+        doc.LoadFromFile(str(docx_path))
+        doc.SaveToFile(str(pdf_path), FileFormat.PDF)
+        doc.Close()
+        return pdf_path
 
     # ── LibreOffice ───────────────────────────────────────────────────────────
 

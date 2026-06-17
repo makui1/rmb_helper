@@ -1,6 +1,8 @@
 import base64
 import html as _html
+import math
 import re
+import sys
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -12,6 +14,20 @@ from docx.enum.text import WD_LINE_SPACING
 
 from .lrmx import LrmxFile
 
+
+def get_template_path() -> Path:
+    """返回内置模板路径，开发环境和 PyInstaller 打包后均适用。"""
+    if hasattr(sys, '_MEIPASS'):
+        p = Path(sys._MEIPASS) / 'resources' / 'template.docx'
+    else:
+        p = Path(__file__).parent.parent / 'resources' / 'template.docx'
+    if not p.exists():
+        raise FileNotFoundError(
+            f'找不到内置模板文件，请将 template.docx 放至：{p}'
+        )
+    return p
+
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 MAX_FAMILY_SLOTS = 10   # how many m0..m9 slots to expose; should exceed any template
@@ -21,24 +37,24 @@ MAX_FAMILY_SLOTS = 10   # how many m0..m9 slots to expose; should exceed any tem
 # Line spacing = font_size + 1 pt.
 _JIANLI_FONT_TIERS: list[tuple[int, float]] = [
     (12, 14.0),
-    (14, 13.5),
-    (16, 13.0),
-    (18, 12.5),
-    (20, 12.0),
-    (22, 11.5),
-    (24, 11.0),
-    (25, 10.5),
-    (26, 10.0),
-    (28,  9.5),
-    (29,  9.0),
-    (30,  8.5),
-    (32,  8.0),
-    (38,  7.5),
-    (40,  7.0),
-    (42,  6.5),
-    (44,  6.0),
-    (46,  5.5),
-    (48,  5.0),
+    (18, 13.5),
+    (24, 13.0),
+    (28, 12.5),
+    (34, 12.0),
+    (38, 11.5),
+    (40, 11.0),
+    (44, 10.5),
+    (46, 10.0),
+    (58,  9.5),
+    (58,  9.0),
+    (58,  8.5),
+    (58,  8.0),
+    (58,  7.5),
+    (58,  7.0),
+    (58,  6.5),
+    (58,  6.0),
+    (58,  5.5),
+    (58,  5.0),
 ]
 
 _PT_PER_EMU = 12700      # 1 pt = 12700 EMU
@@ -220,7 +236,7 @@ def _shrink_para_by_1pt(para, fallback_pt: float = 10.5, target_pt: float = 13.5
 
 def _char_width_pt(ch: str, font_pt: float) -> float:
     """CJK / full-width chars count as full font_pt wide; ASCII as ~60%."""
-    return font_pt if ord(ch) > 0x2E7F else font_pt * 0.6
+    return font_pt if ord(ch) > 0x2E7F else font_pt
 
 
 def _text_width_pt(text: str, font_pt: float) -> float:
@@ -251,6 +267,7 @@ class DocxExporter:
         self._photo_cell_cache: Optional[tuple[int, int]] = None  # (width_emu, height_emu)
         self._xueli_shrink_text: Optional[str] = None   # XueLi text that needs post-shrink
         self._jianli_line_count: int = 0                   # number of rendered JianLi lines
+        self._jianli_lines: list[str] = []                 # formatted lines for visual estimation
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
         tpl = DocxTemplate(self.template_path)
@@ -258,9 +275,6 @@ class DocxExporter:
         tpl.render(context)
         out = Path(output_path)
         tpl.save(out)
-        # Post-process the saved file with plain python-docx. Doing this after
-        # save (rather than via tpl.get_docx()) avoids disturbing docxtpl's
-        # render/save pipeline.
         self._post_process(out)
 
     def _build_context(self, lrmx: LrmxFile, tpl: DocxTemplate) -> dict:
@@ -287,8 +301,10 @@ class DocxExporter:
         # JianLi: list of 'time<TAB>experience' strings for a
         # {%p for line in JianLi %}{{line}}{%p endfor %} loop. Column alignment
         # (hanging indent) is configured in the template, not here.
-        jianli = [_html.escape(l, quote=False) for l in _format_jianli_list(raw.get('JianLi', ''))]
+        jianli_raw = _format_jianli_list(raw.get('JianLi', ''))
+        jianli = [_html.escape(l, quote=False) for l in jianli_raw]
         self._jianli_line_count = len(jianli)
+        self._jianli_lines = jianli_raw   # unescaped, for width estimation
         ctx['JianLi'] = jianli
 
         # QuanRiZhiJiaoYu XueLi/XueWei overflow:
@@ -386,43 +402,86 @@ class DocxExporter:
                             changed |= _shrink_para_by_1pt(para)
         return changed
 
-    def _shrink_jianli_cell(self, doc) -> bool:
-        """Apply font/spacing to JianLi cell based on line count.
+    def _estimate_jianli_visual_lines(self, cell_width_emu: int, font_pt: float) -> int:
+        """估算简历单元格视觉行数。
 
-        Looks up _JIANLI_FONT_TIERS: first tier where line_limit >= line count.
-        Line spacing = font_size + 1 pt.  No change when line count ≤ first tier.
+        每条目格式：'yyyy.MM--yyyy.MM\t经历内容'
+        悬挂缩进 9 个汉字宽，内容（含首行 tab 后）都从 9*font_pt 处开始，
+        可用宽度 = 单元格宽 - 左右内边距 - 悬挂缩进。
         """
-        total = self._jianli_line_count
-        target_pt = _JIANLI_FONT_TIERS[0][1]
-        for char_limit, font_pt in _JIANLI_FONT_TIERS:
-            if total <= char_limit:
+        cell_pt = cell_width_emu / _PT_PER_EMU
+        margin_pt = _CELL_MARGIN_PT * 2        # 左右内边距合计
+        indent_pt = 9 * font_pt                # 悬挂缩进（9个汉字）
+        avail_pt = cell_pt - margin_pt - indent_pt
+
+        if avail_pt <= 0:
+            return self._jianli_line_count
+
+        total = 0
+        for line in self._jianli_lines:
+            # tab 后面才是正文内容；tab 前的日期部分占据悬挂缩进区域
+            content = line.split('\t', 1)[1] if '\t' in line else line
+            content_w = _text_width_pt(content, font_pt)
+            total += max(1, math.ceil(content_w / avail_pt))
+        return total
+
+    def _shrink_jianli_cell(self, doc) -> bool:
+        """Apply font/spacing to JianLi cell based on estimated visual line count.
+
+        Finds the JianLi cell first to get its width, then estimates visual lines
+        at the first-tier font (14pt) as a reference, looks up _JIANLI_FONT_TIERS,
+        and applies the target font/spacing.
+        """
+        # ── 第一步：找到简历单元格，获取宽度 ──────────────────────────────────
+        jianli_cells: list = []
+        seen: set[int] = set()
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if not any(_JIANLI_RENDERED.search(p.text) for p in cell.paragraphs):
+                        continue
+                    cid = id(cell._tc)
+                    if cid in seen:
+                        continue
+                    seen.add(cid)
+                    jianli_cells.append(cell)
+
+        if not jianli_cells:
+            return False
+
+        # ── 第二步：用第一档字号估算视觉行数，确定目标字号 ────────────────────
+        ref_font_pt = _JIANLI_FONT_TIERS[0][1]   # 14pt，基准字号
+        cell_w = jianli_cells[0].width or 0
+        if cell_w:
+            vis = self._estimate_jianli_visual_lines(cell_w, ref_font_pt)
+        else:
+            vis = self._jianli_line_count          # 无宽度信息时退回数据行数
+
+        target_pt = ref_font_pt
+        for line_limit, font_pt in _JIANLI_FONT_TIERS:
+            if vis <= line_limit:
                 target_pt = font_pt
                 break
         else:
             target_pt = _JIANLI_FONT_TIERS[-1][1]
 
-        if target_pt >= _JIANLI_FONT_TIERS[0][1]:
+        print(
+            f'[JianLi] 数据行={self._jianli_line_count}  估算视觉行={vis}'
+            f'  字号={target_pt}pt  单元格宽={cell_w / _PT_PER_EMU:.1f}pt'
+        )
+
+        if target_pt >= ref_font_pt:
             return False
 
+        # ── 第三步：应用字号与行距 ──────────────────────────────────────────────
         line_spacing_pt = target_pt + 1.0
-
         changed = False
-        processed: set[int] = set()
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    paras = cell.paragraphs
-                    if not any(_JIANLI_RENDERED.search(p.text) for p in paras):
-                        continue
-                    cid = id(cell._tc)
-                    if cid in processed:
-                        continue
-                    processed.add(cid)
-                    for para in paras:
-                        if _shrink_para_by_1pt(para, target_pt=target_pt):
-                            changed = True
-                            para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                            para.paragraph_format.line_spacing = Pt(line_spacing_pt)
+        for cell in jianli_cells:
+            for para in cell.paragraphs:
+                if _shrink_para_by_1pt(para, target_pt=target_pt):
+                    changed = True
+                    para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                    para.paragraph_format.line_spacing = Pt(line_spacing_pt)
         return changed
 
     # ── Photo ────────────────────────────────────────────────────────────────
