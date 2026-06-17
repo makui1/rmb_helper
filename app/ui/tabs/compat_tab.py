@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
     QCheckBox, QLineEdit, QComboBox, QTextEdit,
-    QFileDialog, QSplitter, QFrame,
+    QFileDialog, QFrame,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
@@ -64,11 +64,15 @@ class _CompatWorker(QThread):
 # ── tab widget ────────────────────────────────────────────────────────────────
 
 class CompatTab(QWidget):
-    def __init__(self, parent=None):
+    USES_FILE_PANEL: bool = True
+    busy_changed = Signal(bool)
+
+    def __init__(self, file_panel: LrmxFilePanel, parent=None):
         super().__init__(parent)
         self._worker = None
         self._log_entries: list[tuple[str, str]] = []
         self._active_filter = 'all'
+        self._file_panel = file_panel
         self._build_ui()
         self.setAcceptDrops(True)
 
@@ -85,22 +89,10 @@ class CompatTab(QWidget):
         sub.setStyleSheet('color: #888880; font-size: 12px;')
         layout.addWidget(sub)
 
-        # ── 分割器：上方文件面板 / 下方控件+日志 ──────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setChildrenCollapsible(False)
-        layout.addWidget(splitter, 1)
-
-        self._file_panel = LrmxFilePanel()
-        splitter.addWidget(self._file_panel)
-
-        bottom = QWidget()
-        bot_layout = QVBoxLayout(bottom)
+        bot_layout = QVBoxLayout()
         bot_layout.setContentsMargins(0, 0, 0, 0)
         bot_layout.setSpacing(12)
-        splitter.addWidget(bottom)
-
-        splitter.setSizes([140, 400])
-        splitter.setHandleWidth(4)
+        layout.addLayout(bot_layout, 1)
 
         # ── 参数设置 ───────────────────────────────────────────────────────────
         sep = QFrame()
@@ -279,8 +271,10 @@ class CompatTab(QWidget):
         )
         self._worker.log.connect(self._append_log)
         self._worker.finished.connect(self._on_finished)
+        self.busy_changed.emit(True)
         self._worker.start()
 
     def _on_finished(self, processed: int, total: int):
         self._run_btn.setEnabled(True)
+        self.busy_changed.emit(False)
         self._append_log(f'── 完成：共 {total} 个文件，处理 {processed} 个 ──')
