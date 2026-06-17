@@ -18,6 +18,9 @@ build/
 .idea/
 .superpowers/
 
+# Java / Maven (docx2pdf 子项目)
+docx2pdf/target/
+
 # 项目临时文件
 *.lrmx.bak
 *.tmp
