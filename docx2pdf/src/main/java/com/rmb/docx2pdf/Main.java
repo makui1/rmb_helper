@@ -1,12 +1,7 @@
 package com.rmb.docx2pdf;
 
-import com.aspose.words.Cell;
-import com.aspose.words.Document;
-import com.aspose.words.NodeType;
-import com.aspose.words.Paragraph;
-import com.aspose.words.ParagraphFormat;
-import com.aspose.words.SaveFormat;
-import com.aspose.words.TabStop;
+import com.spire.doc.Document;
+import com.spire.doc.FileFormat;
 
 import java.io.PrintStream;
 import java.nio.file.Files;
@@ -31,7 +26,6 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            // 强制 UTF-8 输出，避免中文路径乱码
             System.setOut(new PrintStream(System.out, true, "UTF-8"));
             System.setErr(new PrintStream(System.err, true, "UTF-8"));
         } catch (Exception ignored) {}
@@ -41,7 +35,6 @@ public class Main {
             System.exit(2);
         }
 
-        // 创建输出目录
         Path outDir = Paths.get(args[0]);
         try {
             Files.createDirectories(outDir);
@@ -57,29 +50,13 @@ public class Main {
             String inputPath = args[i];
             Path inPath = Paths.get(inputPath);
             String baseName = inPath.getFileName().toString();
-            // 将 .docx 扩展名替换为 .pdf（不区分大小写）
             String pdfName = baseName.replaceAll("(?i)\\.docx$", ".pdf");
             Path outPath = outDir.resolve(pdfName);
 
             try {
                 Document doc = new Document(inputPath);
-                // Aspose 19.5 在表格单元格内不正确渲染 firstLineIndent 负值（悬挂缩进），
-                // 导致每行都缩进。绕过方案：将悬挂缩进段落改为显式 tab stop，
-                // 清零缩进使每行从 0 开始，tab 后内容仍对齐到原缩进位置。
-                for (Paragraph para : (Iterable<Paragraph>) doc.getChildNodes(NodeType.PARAGRAPH, true)) {
-                    if (para.getAncestor(NodeType.CELL) != null) {
-                        ParagraphFormat fmt = para.getParagraphFormat();
-                        double left = fmt.getLeftIndent();
-                        double first = fmt.getFirstLineIndent();
-                        // 识别悬挂缩进：leftIndent > 0 且 firstLineIndent ≈ -leftIndent
-                        if (left > 20 && Math.abs(first + left) < 1.0) {
-                            fmt.getTabStops().add(new TabStop(left));
-                            fmt.setLeftIndent(0);
-                            fmt.setFirstLineIndent(0);
-                        }
-                    }
-                }
-                doc.save(outPath.toString(), SaveFormat.PDF);
+                doc.saveToFile(outPath.toString(), FileFormat.PDF);
+                doc.close();
                 System.out.println("OK " + outPath.toAbsolutePath());
                 success++;
             } catch (Exception e) {

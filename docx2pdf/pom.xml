@@ -18,20 +18,23 @@
         <mainClass>com.rmb.docx2pdf.Main</mainClass>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>e-iceblue</id>
+            <url>https://repo.e-iceblue.com/nexus/content/groups/public/</url>
+        </repository>
+    </repositories>
+
     <dependencies>
-        <!-- Aspose.Words — 本地 JAR，通过 system scope 引用 -->
         <dependency>
-            <groupId>com.aspose</groupId>
-            <artifactId>aspose-words</artifactId>
-            <version>19.5</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/lib/aspose-words-19.5jdk.jar</systemPath>
+            <groupId>e-iceblue</groupId>
+            <artifactId>spire.doc.free</artifactId>
+            <version>5.2.0</version>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- JDK 21 编译器 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -43,31 +46,36 @@
                 </configuration>
             </plugin>
 
-            <!-- 将所有依赖（含 system scope）打进一个 fat JAR -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.7.1</version>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.3</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
-                        <goals><goal>single</goal></goals>
+                        <goals><goal>shade</goal></goals>
                         <configuration>
-                            <archive>
-                                <manifest>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>${mainClass}</mainClass>
-                                </manifest>
-                            </archive>
-                            <!-- 使用自定义描述符，以便同时包含 system scope 的 Aspose JAR -->
-                            <descriptors>
-                                <descriptor>src/assembly/fat-jar.xml</descriptor>
-                            </descriptors>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
 
-            <!-- 将 fat JAR 包装为 Windows 控制台 exe -->
             <plugin>
                 <groupId>com.akathist.maven.plugins.launch4j</groupId>
                 <artifactId>launch4j-maven-plugin</artifactId>
@@ -78,10 +86,9 @@
                         <phase>package</phase>
                         <goals><goal>launch4j</goal></goals>
                         <configuration>
-                            <!-- console 模式：stdout/stderr 正常输出，适合子进程调用 -->
                             <headerType>console</headerType>
                             <outfile>${project.build.directory}/docx2pdf.exe</outfile>
-                            <jar>${project.build.directory}/${project.artifactId}-${project.version}-fat-jar.jar</jar>
+                            <jar>${project.build.directory}/${project.artifactId}-${project.version}.jar</jar>
                             <errTitle>docx2pdf</errTitle>
                             <jre>
                                 <minVersion>21</minVersion>
