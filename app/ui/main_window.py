@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
-        self.setBaseSize(1250, 700)
+        self.resize(1250, 700)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
         self.setStyleSheet(QSS)

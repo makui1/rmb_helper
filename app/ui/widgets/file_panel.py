@@ -166,24 +166,28 @@ class LrmxFilePanel(QWidget):
         header.setSpacing(6)
 
         self._add_btn = QPushButton('添加')
-        self._add_btn.setIcon(QIcon(str(_ASSETS / 'add.svg')))
+        self._add_btn.setIcon(QIcon(str(_ASSETS / 'add-btn.svg')))
         self._add_btn.setFixedHeight(26)
         self._add_menu = QMenu(self._add_btn)
         self._add_menu.addAction('选择文件…', self._pick_files)
         self._add_menu.addAction('选择文件夹…', self._pick_folder)
         self._add_btn.setMenu(self._add_menu)
 
-        del_btn = QPushButton('删除选中')
-        del_btn.setFixedHeight(26)
-        del_btn.clicked.connect(self._remove_selected)
+        self._del_btn = QPushButton('删除选中')
+        self._del_btn.setIcon(QIcon(str(_ASSETS / 'delete-btn.svg')))
+        self._del_btn.setFixedHeight(26)
+        self._del_btn.setToolTip('删除选中的文件')
+        self._del_btn.clicked.connect(self._remove_selected)
 
-        clear_btn = QPushButton('清空')
-        clear_btn.setFixedHeight(26)
-        clear_btn.clicked.connect(self._clear_files)
+        self._clear_btn = QPushButton('清空')
+        self._clear_btn.setIcon(QIcon(str(_ASSETS / 'clear-btn.svg')))
+        self._clear_btn.setFixedHeight(26)
+        self._clear_btn.setToolTip('清空所有文件')
+        self._clear_btn.clicked.connect(self._clear_files)
 
         header.addWidget(self._add_btn)
-        header.addWidget(del_btn)
-        header.addWidget(clear_btn)
+        header.addWidget(self._del_btn)
+        header.addWidget(self._clear_btn)
         layout.addLayout(header)
 
         self._list = _FileList()
@@ -194,6 +198,19 @@ class LrmxFilePanel(QWidget):
             )
         )
         layout.addWidget(self._list)
+
+    _BTN_TEXT_THRESHOLD = 230  # px — below this width, hide button labels
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        narrow = self.width() < self._BTN_TEXT_THRESHOLD
+        for btn, label, icon in (
+            (self._add_btn, '添加', str(_ASSETS / 'add-btn.svg')),
+            (self._del_btn, '删除选中', str(_ASSETS / 'delete-btn.svg')),
+            (self._clear_btn, '清空', str(_ASSETS / 'clear-btn.svg')),
+        ):
+            btn.setText('' if narrow else label)
+            btn.setIcon(QIcon(icon) if narrow else QIcon())
 
     # ── public API ─────────────────────────────────────────────────────────────
 
