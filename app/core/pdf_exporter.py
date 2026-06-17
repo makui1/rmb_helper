@@ -115,11 +115,11 @@ class PdfExporter:
     ) -> list[tuple[Path, Path | None, str]]:
         proc = subprocess.run(
             [str(self._aspose_exe), str(output_dir)] + [str(p) for p in docx_paths],
-            capture_output=True, text=True, encoding='utf-8',
+            capture_output=True, text=True, encoding='utf-8', errors='replace',
         )
-        # 解析 OK / ERR 行（按 stem 匹配回原始输入）
-        ok_stems:  set[str]        = set()
-        err_stems: dict[str, str]  = {}
+        # 解析 OK / ERR 行（按 stem 匹配；编码异常时回退到文件存在性检查）
+        ok_stems:  set[str]       = set()
+        err_stems: dict[str, str] = {}
         for line in proc.stdout.splitlines():
             if line.startswith('OK '):
                 ok_stems.add(Path(line[3:].strip()).stem.lower())
@@ -132,10 +132,16 @@ class PdfExporter:
         results = []
         for p in docx_paths:
             key = p.stem.lower()
-            if key in ok_stems:
-                results.append((p, output_dir / (p.stem + '.pdf'), ''))
+            expected_pdf = output_dir / (p.stem + '.pdf')
+            # 优先看解析到的 OK，其次直接检查 PDF 文件是否存在
+            if key in ok_stems or expected_pdf.exists():
+                results.append((p, expected_pdf, ''))
             else:
-                results.append((p, None, err_stems.get(key, '转换失败（未知原因）')))
+                err = err_stems.get(key, '')
+                if not err:
+                    # 把 stderr 前 300 字符附到错误信息，方便诊断
+                    err = (proc.stderr.strip()[:300] if proc.stderr else '') or '转换失败（未知原因）'
+                results.append((p, None, err))
         return results
 
     # ── LibreOffice ───────────────────────────────────────────────────────────
