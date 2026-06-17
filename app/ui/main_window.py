@@ -269,13 +269,18 @@ class MainWindow(QMainWindow):
         if event.button() == Qt.MouseButton.LeftButton:
             edges = self._edge_at(event.position().toPoint())
             if edges:
-                self.windowHandle().startSystemResize(edges)
+                wh = self.windowHandle()
+                if wh:
+                    wh.startSystemResize(edges)
                 return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        edges = self._edge_at(event.position().toPoint())
-        self.setCursor(self._CURSOR_MAP.get(edges, Qt.CursorShape.ArrowCursor))
+        if not self.isMaximized():
+            edges = self._edge_at(event.position().toPoint())
+            self.setCursor(self._CURSOR_MAP.get(edges, Qt.CursorShape.ArrowCursor))
+        else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
         super().mouseMoveEvent(event)
 
     def toggle_sidebar(self):
