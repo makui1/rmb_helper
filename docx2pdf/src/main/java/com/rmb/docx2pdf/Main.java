@@ -4,6 +4,7 @@ import com.aspose.words.Cell;
 import com.aspose.words.Document;
 import com.aspose.words.NodeType;
 import com.aspose.words.Paragraph;
+import com.aspose.words.ParagraphFormat;
 import com.aspose.words.SaveFormat;
 
 import java.io.PrintStream;
@@ -61,11 +62,19 @@ public class Main {
 
             try {
                 Document doc = new Document(inputPath);
-                // 只清除表格单元格内段落的缩进，修复 Aspose 与 WPS 渲染差异
+                // 修复 Aspose 与 WPS 悬挂缩进渲染差异：
+                // WPS 遇到 tab+leftIndent 时视觉上只缩进 tab 后内容，
+                // Aspose 严格应用 leftIndent 导致每行都缩进。
+                // 对有 leftIndent 但缺少悬挂首行的段落补设 firstLineIndent=-leftIndent，
+                // 使首行回到左边距，折行才在 leftIndent 处对齐。
                 for (Paragraph para : (Iterable<Paragraph>) doc.getChildNodes(NodeType.PARAGRAPH, true)) {
                     if (para.getAncestor(NodeType.CELL) != null) {
-                        para.getParagraphFormat().setLeftIndent(0);
-                        para.getParagraphFormat().setFirstLineIndent(0);
+                        ParagraphFormat fmt = para.getParagraphFormat();
+                        double left = fmt.getLeftIndent();
+                        double first = fmt.getFirstLineIndent();
+                        if (left > 0 && first >= 0) {
+                            fmt.setFirstLineIndent(-left);
+                        }
                     }
                 }
                 doc.save(outPath.toString(), SaveFormat.PDF);
