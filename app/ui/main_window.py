@@ -2,9 +2,10 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QStackedWidget, QFrame,
+    QPushButton, QLabel, QStackedWidget, QFrame, QSplitter,
 )
-from PySide6.QtCore import Qt, QPoint, QRect, QSize
+from PySide6.QtCore import Qt, QPoint, QSize, QEvent
+from app.ui.widgets.file_panel import LrmxFilePanel
 from PySide6.QtGui import QIcon
 
 from app.ui.style import QSS
@@ -93,7 +94,7 @@ class _TitleBar(QWidget):
             self._drag_pos = (
                 event.globalPosition().toPoint() - self._win.frameGeometry().topLeft()
             )
-            self._drag_from_maximized = self._win._pseudo_maximized
+            self._drag_from_maximized = self._win.isMaximized()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -102,10 +103,8 @@ class _TitleBar(QWidget):
             return
         global_pos = event.globalPosition().toPoint()
         if self._drag_from_maximized:
-            # Restore and recompute drag offset so cursor stays at the same
-            # horizontal ratio within the restored title bar.
             ratio = self._drag_pos.x() / max(self._win.width(), 1)
-            self._win.toggle_maximize()
+            self._win.showNormal()
             self._drag_pos = QPoint(
                 int(ratio * self._win.width()),
                 self._drag_pos.y(),
@@ -137,14 +136,14 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
-        self.setMinimumSize(900, 700)
+        self.setMinimumSize(1100, 700)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
         self.setStyleSheet(QSS)
+        self.setMouseTracking(True)
         self._sidebar_container: QWidget | None = None
         self._title_bar: _TitleBar | None = None
-        self._pseudo_maximized: bool = False
-        self._restore_geometry: QRect | None = None
+        self._file_panel: LrmxFilePanel | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -203,35 +202,81 @@ class MainWindow(QMainWindow):
         from app.ui.tabs.compat_tab import CompatTab
         from app.ui.tabs.verify_tab import VerifyTab
 
+        self._file_panel = LrmxFilePanel()
+        self._file_panel.setMinimumWidth(180)
+
+        convert_tab = ConvertTab(self._file_panel)
+        compat_tab = CompatTab(self._file_panel)
+        verify_tab = VerifyTab(self._file_panel)
+
         self._stack = QStackedWidget()
-        self._stack.addWidget(ConvertTab())   # index 0 → 批量转换
-        self._stack.addWidget(CompatTab())    # index 1 → 版本兼容
-        self._stack.addWidget(VerifyTab())    # index 2 → 批量核验
+        self._stack.addWidget(convert_tab)    # index 0 → 批量转换
+        self._stack.addWidget(compat_tab)     # index 1 → 版本兼容
+        self._stack.addWidget(verify_tab)     # index 2 → 批量核验
         self._stack.addWidget(SettingsTab())  # index 3 → 设置
 
+        for tab in (convert_tab, compat_tab, verify_tab):
+            tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
+
+        content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        content_splitter.setChildrenCollapsible(False)
+        content_splitter.setHandleWidth(4)
+        content_splitter.addWidget(self._file_panel)
+        content_splitter.addWidget(self._stack)
+        content_splitter.setSizes([220, 700])
+
         body_layout.addWidget(sidebar_container)
-        body_layout.addWidget(self._stack)
+        body_layout.addWidget(content_splitter, 1)
         root.addWidget(body)
 
         self._switch_tab(0)
 
-    _SIDEBAR_W_NORMAL = 172
-    _SIDEBAR_W_MAX    = 250
-
     def toggle_maximize(self):
-        if self._pseudo_maximized:
-            if self._restore_geometry:
-                self.setGeometry(self._restore_geometry)
-            self._pseudo_maximized = False
+        if self.isMaximized():
+            self.showNormal()
         else:
-            self._restore_geometry = self.geometry()
-            self.setGeometry(self.screen().availableGeometry())
-            self._pseudo_maximized = True
-        if self._title_bar:
-            self._title_bar.set_maximized(self._pseudo_maximized)
-        if self._sidebar_container:
-            w = self._SIDEBAR_W_MAX if self._pseudo_maximized else self._SIDEBAR_W_NORMAL
-            self._sidebar_container.setFixedWidth(w)
+            self.showMaximized()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange and self._title_bar:
+            self._title_bar.set_maximized(self.isMaximized())
+        super().changeEvent(event)
+
+    _RESIZE_MARGIN = 8
+
+    _CURSOR_MAP = {
+        Qt.Edge.LeftEdge:                                Qt.CursorShape.SizeHorCursor,
+        Qt.Edge.RightEdge:                               Qt.CursorShape.SizeHorCursor,
+        Qt.Edge.TopEdge:                                 Qt.CursorShape.SizeVerCursor,
+        Qt.Edge.BottomEdge:                              Qt.CursorShape.SizeVerCursor,
+        Qt.Edge.LeftEdge  | Qt.Edge.TopEdge:             Qt.CursorShape.SizeFDiagCursor,
+        Qt.Edge.RightEdge | Qt.Edge.BottomEdge:          Qt.CursorShape.SizeFDiagCursor,
+        Qt.Edge.RightEdge | Qt.Edge.TopEdge:             Qt.CursorShape.SizeBDiagCursor,
+        Qt.Edge.LeftEdge  | Qt.Edge.BottomEdge:          Qt.CursorShape.SizeBDiagCursor,
+    }
+
+    def _edge_at(self, pos: QPoint) -> Qt.Edges:
+        x, y, w, h = pos.x(), pos.y(), self.width(), self.height()
+        m = self._RESIZE_MARGIN
+        edges = Qt.Edges()
+        if x < m:      edges |= Qt.Edge.LeftEdge
+        if x > w - m:  edges |= Qt.Edge.RightEdge
+        if y < m:      edges |= Qt.Edge.TopEdge
+        if y > h - m:  edges |= Qt.Edge.BottomEdge
+        return edges
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            edges = self._edge_at(event.position().toPoint())
+            if edges:
+                self.windowHandle().startSystemResize(edges)
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        edges = self._edge_at(event.position().toPoint())
+        self.setCursor(self._CURSOR_MAP.get(edges, Qt.CursorShape.ArrowCursor))
+        super().mouseMoveEvent(event)
 
     def toggle_sidebar(self):
         if self._sidebar_container:
@@ -256,3 +301,6 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(self._nav_btns):
             btn.setChecked(i == index)
+        if self._file_panel:
+            widget = self._stack.widget(index)
+            self._file_panel.setVisible(getattr(widget, 'USES_FILE_PANEL', False))
