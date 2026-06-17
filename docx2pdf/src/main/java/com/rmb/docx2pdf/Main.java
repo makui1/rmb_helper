@@ -1,5 +1,6 @@
 package com.rmb.docx2pdf;
 
+import com.aspose.words.Cell;
 import com.aspose.words.Document;
 import com.aspose.words.NodeType;
 import com.aspose.words.Paragraph;
@@ -60,10 +61,12 @@ public class Main {
 
             try {
                 Document doc = new Document(inputPath);
-                // 清除所有段落的左缩进，修复 Aspose 与 WPS 渲染差异
+                // 只清除表格单元格内段落的缩进，修复 Aspose 与 WPS 渲染差异
                 for (Paragraph para : (Iterable<Paragraph>) doc.getChildNodes(NodeType.PARAGRAPH, true)) {
-                    para.getParagraphFormat().setLeftIndent(0);
-                    para.getParagraphFormat().setFirstLineIndent(0);
+                    if (para.getAncestor(NodeType.CELL) != null) {
+                        para.getParagraphFormat().setLeftIndent(0);
+                        para.getParagraphFormat().setFirstLineIndent(0);
+                    }
                 }
                 doc.save(outPath.toString(), SaveFormat.PDF);
                 System.out.println("OK " + outPath.toAbsolutePath());
