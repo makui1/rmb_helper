@@ -181,9 +181,9 @@ class MainWindow(QMainWindow):
 
         self._nav_btns: list[QPushButton] = []
         for label, icon in [
-            ('批量转换', 'convert.svg'),
-            ('版本兼容', 'compat.svg'),
-            ('批量核验', 'verify.svg'),
+            ('批量格式转换', 'convert.svg'),
+            ('批量版本兼容', 'compat.svg'),
+            ('批量核验/更新', 'verify.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)

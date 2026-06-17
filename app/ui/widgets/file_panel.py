@@ -116,7 +116,7 @@ class _FileRow(QWidget):
         name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(name, 1)
 
-        btn = QPushButton('×')
+        btn = QPushButton()
         btn.setObjectName('fileItemRemove')
         btn.setFixedSize(20, 20)
         btn.clicked.connect(lambda: self.removed.emit(self._item))

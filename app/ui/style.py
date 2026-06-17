@@ -50,7 +50,7 @@ QPushButton#winBtnClose:hover {{
 QLabel#titleBarAppName {{
     color: #555550;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: bold;
     background: transparent;
 }}
 QFrame#titleBarSep {{
@@ -234,7 +234,7 @@ QLabel#fileItemName {{
     background: transparent;
 }}
 QPushButton#fileItemRemove {{
-    border: none;
+    border-image: url({_ASSETS}/remove.svg);
     background: transparent;
     color: #BBBBBB;
     font-size: 16px;
@@ -242,6 +242,7 @@ QPushButton#fileItemRemove {{
     padding: 0;
 }}
 QPushButton#fileItemRemove:hover {{
+    border-image: url({_ASSETS}/remove-hover.svg);
     color: {ACCENT};
     background: transparent;
 }}
