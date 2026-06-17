@@ -79,23 +79,31 @@ class _Worker(QThread):
             except Exception as e:
                 self.log.emit(f'✗ {Path(lrmx_path).name}: {e}')
 
-        # ── Phase 2: 批量 PDF 转换（Aspose 只启动一次 JVM）──────────────────
+        # ── Phase 2: 批量 PDF 转换（实时进度回调）────────────────────────────
         if pdf_queue:
             groups: dict[Path, list[tuple[int, Path, str, bool]]] = defaultdict(list)
             for idx, docx, out_dir, stem, is_tmp in pdf_queue:
                 groups[out_dir].append((idx, docx, stem, is_tmp))
 
             for out_dir, tasks in groups.items():
-                docx_paths = [t[1] for t in tasks]
-                results = pdf_exporter.export_batch(docx_paths, out_dir)
-                for (inp, pdf, err), (idx, _, stem, is_tmp) in zip(results, tasks):
+                # stem_map: docx路径 → (idx, display_stem, is_tmp)
+                stem_map = {docx: (idx, stem, is_tmp) for idx, docx, stem, is_tmp in tasks}
+
+                def on_progress(inp: Path, pdf, err: str,
+                                _sm=stem_map, _succeeded=succeeded):
+                    if inp not in _sm:
+                        return
+                    idx, stem, is_tmp = _sm[inp]
                     if pdf is not None:
                         self.log.emit(f'✓ {stem} → pdf 完成')
-                        succeeded[idx] = True
+                        _succeeded[idx] = True
                     else:
                         self.log.emit(f'✗ {stem} → pdf 失败：{err}')
                     if is_tmp:
                         inp.unlink(missing_ok=True)
+
+                docx_paths = [t[1] for t in tasks]
+                pdf_exporter.export_batch(docx_paths, out_dir, on_progress=on_progress)
 
         done = sum(succeeded)
         self.finished.emit(done, total, time.monotonic() - start)

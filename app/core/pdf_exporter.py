@@ -88,59 +88,89 @@ class PdfExporter:
         raise RuntimeError('未检测到可用的 PDF 渲染引擎，请构建 docx2pdf.exe 或安装 WPS / LibreOffice。')
 
     def export_batch(
-        self, docx_paths: list[Path], output_dir: Path
+        self,
+        docx_paths: list[Path],
+        output_dir: Path,
+        on_progress: 'Callable[[Path, Path | None, str], None] | None' = None,
     ) -> list[tuple[Path, Path | None, str]]:
         """批量转换。返回 [(输入路径, 输出PDF路径|None, 错误信息)] 列表。
-        Aspose 引擎只启动一次 JVM；其他引擎逐个调用。
+        on_progress(inp, pdf, err) 在每个文件完成时实时回调（可选）。
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if self.engine == PdfEngine.ASPOSE:
-            return self._via_aspose_batch(docx_paths, output_dir)
+            return self._via_aspose_batch(docx_paths, output_dir, on_progress)
 
         results = []
         for p in docx_paths:
             try:
                 pdf = self.export(p, output_dir)
                 results.append((p, pdf, ''))
+                if on_progress:
+                    on_progress(p, pdf, '')
             except Exception as e:
                 results.append((p, None, str(e)))
+                if on_progress:
+                    on_progress(p, None, str(e))
         return results
 
-    # ── Aspose (Java exe) ─────────────────────────────────────────────────────
+    # ── Aspose / Spire (Java exe) ─────────────────────────────────────────────
 
     def _via_aspose_batch(
-        self, docx_paths: list[Path], output_dir: Path
+        self,
+        docx_paths: list[Path],
+        output_dir: Path,
+        on_progress: 'Callable[[Path, Path | None, str], None] | None' = None,
     ) -> list[tuple[Path, Path | None, str]]:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [str(self._aspose_exe), str(output_dir)] + [str(p) for p in docx_paths],
-            capture_output=True, text=True, encoding='utf-8', errors='replace',
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace',
         )
-        # 解析 OK / ERR 行（按 stem 匹配；编码异常时回退到文件存在性检查）
+
+        # 建立 stem → 原始路径的反查表，用于 on_progress 回调
+        stem_map: dict[str, Path] = {p.stem.lower(): p for p in docx_paths}
+
         ok_stems:  set[str]       = set()
         err_stems: dict[str, str] = {}
-        for line in proc.stdout.splitlines():
+
+        # 逐行读取，实时回调
+        for line in proc.stdout:
+            line = line.rstrip()
             if line.startswith('OK '):
-                ok_stems.add(Path(line[3:].strip()).stem.lower())
+                key = Path(line[3:].strip()).stem.lower()
+                ok_stems.add(key)
+                if on_progress and key in stem_map:
+                    p = stem_map[key]
+                    on_progress(p, output_dir / (p.stem + '.pdf'), '')
             elif line.startswith('ERR '):
                 rest = line[4:]
                 sep = rest.find(': ')
                 if sep != -1:
-                    err_stems[Path(rest[:sep]).stem.lower()] = rest[sep + 2:]
+                    key = Path(rest[:sep]).stem.lower()
+                    err = rest[sep + 2:]
+                    err_stems[key] = err
+                    if on_progress and key in stem_map:
+                        on_progress(stem_map[key], None, err)
+
+        proc.wait()
+        stderr_content = proc.stderr.read()
+
+        def _diag() -> str:
+            parts = [f'exit={proc.returncode}']
+            if stderr_content:
+                parts.append('stderr: ' + stderr_content.strip()[:400])
+            return ' | '.join(parts) or '进程无任何输出'
 
         results = []
         for p in docx_paths:
             key = p.stem.lower()
             expected_pdf = output_dir / (p.stem + '.pdf')
-            # 优先看解析到的 OK，其次直接检查 PDF 文件是否存在
             if key in ok_stems or expected_pdf.exists():
                 results.append((p, expected_pdf, ''))
             else:
-                err = err_stems.get(key, '')
-                if not err:
-                    # 把 stderr 前 300 字符附到错误信息，方便诊断
-                    err = (proc.stderr.strip()[:300] if proc.stderr else '') or '转换失败（未知原因）'
+                err = err_stems.get(key) or _diag()
                 results.append((p, None, err))
         return results
 
