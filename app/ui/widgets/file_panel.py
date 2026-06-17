@@ -83,8 +83,8 @@ class _FileList(QListWidget):
             font.setPointSize(11)
             painter.setFont(font)
             painter.drawText(
-                self.viewport().rect(),
-                Qt.AlignmentFlag.AlignCenter,
+                self.viewport().rect().adjusted(16, 0, -16, 0),
+                Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
                 self._HINT,
             )
             painter.end()
