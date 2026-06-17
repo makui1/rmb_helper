@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
-        self.setMinimumSize(1100, 700)
+        self.setBaseSize(1250, 700)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
         self.setStyleSheet(QSS)
@@ -168,16 +168,16 @@ class MainWindow(QMainWindow):
         # 侧边栏外层容器：提供四周 margin，背景透明，使卡片浮在窗口上
         sidebar_container = QWidget()
         sidebar_container.setObjectName('sidebarContainer')
-        sidebar_container.setFixedWidth(172)  # 8 margin + 156 card + 8 margin
+        sidebar_container.setFixedWidth(190)  # 8 margin + 156 card + 8 margin
         sc_layout = QVBoxLayout(sidebar_container)
-        sc_layout.setContentsMargins(8, 8, 8, 8)
+        sc_layout.setContentsMargins(8, 15, 8, 15)
         sc_layout.setSpacing(0)
 
         # 侧边栏卡片（圆角矩形）
         sidebar = QWidget()
         sidebar.setObjectName('sidebar')
         sb_layout = QVBoxLayout(sidebar)
-        sb_layout.setContentsMargins(0, 8, 0, 8)
+        sb_layout.setContentsMargins(0, 15, 0, 15)
         sb_layout.setSpacing(0)
 
         self._nav_btns: list[QPushButton] = []
@@ -206,6 +206,7 @@ class MainWindow(QMainWindow):
 
         self._file_panel = LrmxFilePanel()
         self._file_panel.setMinimumWidth(180)
+        self._file_panel.setContentsMargins(8,15,0,15)
 
         convert_tab = ConvertTab(self._file_panel)
         compat_tab = CompatTab(self._file_panel)

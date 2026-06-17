@@ -164,9 +164,9 @@ class LrmxFilePanel(QWidget):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(6)
-        header.addStretch()
 
-        self._add_btn = QPushButton('+ 添加')
+        self._add_btn = QPushButton('添加')
+        self._add_btn.setIcon(QIcon(str(_ASSETS / 'add.svg')))
         self._add_btn.setFixedHeight(26)
         self._add_menu = QMenu(self._add_btn)
         self._add_menu.addAction('选择文件…', self._pick_files)

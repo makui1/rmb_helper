@@ -78,7 +78,7 @@ class CompatTab(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setContentsMargins(24, 15, 24, 15)
         layout.setSpacing(12)
 
         title = QLabel('版本兼容')
