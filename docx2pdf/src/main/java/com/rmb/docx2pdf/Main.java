@@ -6,6 +6,7 @@ import com.aspose.words.NodeType;
 import com.aspose.words.Paragraph;
 import com.aspose.words.ParagraphFormat;
 import com.aspose.words.SaveFormat;
+import com.aspose.words.TabStop;
 
 import java.io.PrintStream;
 import java.nio.file.Files;
@@ -62,18 +63,19 @@ public class Main {
 
             try {
                 Document doc = new Document(inputPath);
-                // 修复 Aspose 与 WPS 悬挂缩进渲染差异：
-                // WPS 遇到 tab+leftIndent 时视觉上只缩进 tab 后内容，
-                // Aspose 严格应用 leftIndent 导致每行都缩进。
-                // 对有 leftIndent 但缺少悬挂首行的段落补设 firstLineIndent=-leftIndent，
-                // 使首行回到左边距，折行才在 leftIndent 处对齐。
+                // Aspose 19.5 在表格单元格内不正确渲染 firstLineIndent 负值（悬挂缩进），
+                // 导致每行都缩进。绕过方案：将悬挂缩进段落改为显式 tab stop，
+                // 清零缩进使每行从 0 开始，tab 后内容仍对齐到原缩进位置。
                 for (Paragraph para : (Iterable<Paragraph>) doc.getChildNodes(NodeType.PARAGRAPH, true)) {
                     if (para.getAncestor(NodeType.CELL) != null) {
                         ParagraphFormat fmt = para.getParagraphFormat();
                         double left = fmt.getLeftIndent();
                         double first = fmt.getFirstLineIndent();
-                        if (left > 0 && first >= 0) {
-                            fmt.setFirstLineIndent(-left);
+                        // 识别悬挂缩进：leftIndent > 0 且 firstLineIndent ≈ -leftIndent
+                        if (left > 20 && Math.abs(first + left) < 1.0) {
+                            fmt.getTabStops().add(new TabStop(left));
+                            fmt.setLeftIndent(0);
+                            fmt.setFirstLineIndent(0);
                         }
                     }
                 }
