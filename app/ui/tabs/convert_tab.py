@@ -10,7 +10,7 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.core.lrmx import LrmxFile
 from app.core.docx_exporter import DocxExporter
-from app.core.pdf_exporter import PdfExporter
+from app.core.pdf_exporter import PdfExporter, detect_engine, PdfEngine
 from app.utils.naming import apply_rule, PRESETS
 from app.ui.widgets.file_panel import LrmxFilePanel
 
@@ -33,49 +33,71 @@ class _Worker(QThread):
         self.sibling_dir = sibling_dir
 
     def run(self):
+        from collections import defaultdict
         start = time.monotonic()
         total = len(self.files)
-        done = 0
 
         pdf_exporter = PdfExporter()
+        pdf_available = False
         if self.do_pdf:
-            pdf_ok = pdf_exporter.available()
-            if not pdf_ok:
-                self.log.emit('△ 未检测到可用 PDF 渲染引擎，本次所有 PDF 输出已跳过')
-        else:
-            pdf_ok = False
+            pdf_available = pdf_exporter.available()
+            if not pdf_available:
+                self.log.emit('△ 未检测到可用 PDF 渲染引擎，PDF 输出已跳过')
 
-        for lrmx_path in self.files:
+        # (index, docx_path, out_dir, stem, is_temporary)
+        pdf_queue: list[tuple[int, Path, Path, str, bool]] = []
+        succeeded: list[bool] = [False] * total
+
+        # ── Phase 1: LRMX → DOCX ─────────────────────────────────────────────
+        for idx, lrmx_path in enumerate(self.files):
             try:
                 lf = LrmxFile(Path(lrmx_path))
                 stem = apply_rule(self.naming_rule, lf.as_dict()) or Path(lrmx_path).stem
                 out_dir = Path(lrmx_path).parent if self.sibling_dir else self.output_dir
-                ok = True
+
+                if not self.template_path:
+                    self.log.emit(f'✗ {stem}：未配置模板路径')
+                    continue
 
                 if self.do_docx:
-                    if not self.template_path:
-                        self.log.emit(f'✗ {stem} → docx 失败（未配置模板路径）')
-                        ok = False
+                    docx_path = out_dir / (stem + '.docx')
+                    DocxExporter(self.template_path).export(lf, docx_path)
+                    self.log.emit(f'✓ {stem} → docx 完成')
+                    if self.do_pdf and pdf_available:
+                        pdf_queue.append((idx, docx_path, out_dir, stem, False))
                     else:
-                        DocxExporter(self.template_path).export(lf, out_dir / (stem + '.docx'))
-                        self.log.emit(f'✓ {stem} → docx 完成')
+                        succeeded[idx] = True
 
-                if self.do_pdf and pdf_ok:
-                    if not self.template_path:
-                        self.log.emit(f'✗ {stem} → pdf 失败（未配置模板路径）')
-                        ok = False
-                    else:
-                        tmp_docx = out_dir / (stem + '_tmp.docx')
-                        DocxExporter(self.template_path).export(lf, tmp_docx)
-                        pdf_exporter.export(tmp_docx, out_dir)
-                        tmp_docx.unlink(missing_ok=True)
-                        self.log.emit(f'✓ {stem} → pdf 完成')
+                elif self.do_pdf and pdf_available:
+                    tmp = out_dir / f'_tmp_{stem}.docx'
+                    DocxExporter(self.template_path).export(lf, tmp)
+                    pdf_queue.append((idx, tmp, out_dir, stem, True))
 
-                if ok:
-                    done += 1
+                else:
+                    succeeded[idx] = True
+
             except Exception as e:
                 self.log.emit(f'✗ {Path(lrmx_path).name}: {e}')
 
+        # ── Phase 2: 批量 PDF 转换（Aspose 只启动一次 JVM）──────────────────
+        if pdf_queue:
+            groups: dict[Path, list[tuple[int, Path, str, bool]]] = defaultdict(list)
+            for idx, docx, out_dir, stem, is_tmp in pdf_queue:
+                groups[out_dir].append((idx, docx, stem, is_tmp))
+
+            for out_dir, tasks in groups.items():
+                docx_paths = [t[1] for t in tasks]
+                results = pdf_exporter.export_batch(docx_paths, out_dir)
+                for (inp, pdf, err), (idx, _, stem, is_tmp) in zip(results, tasks):
+                    if pdf is not None:
+                        self.log.emit(f'✓ {stem} → pdf 完成')
+                        succeeded[idx] = True
+                    else:
+                        self.log.emit(f'✗ {stem} → pdf 失败：{err}')
+                    if is_tmp:
+                        inp.unlink(missing_ok=True)
+
+        done = sum(succeeded)
         self.finished.emit(done, total, time.monotonic() - start)
 
 
@@ -132,7 +154,7 @@ class ConvertTab(QWidget):
         fmt_row.addStretch()
         bot_layout.addLayout(fmt_row)
 
-        self._pdf_hint = QLabel('需要安装 WPS / Office / LibreOffice，且导出速度较慢，建议使用第三方工具转换成pdf')
+        self._pdf_hint = QLabel()
         self._pdf_hint.setObjectName('pdfHint')
         self._pdf_hint.setVisible(False)
         bot_layout.addWidget(self._pdf_hint)
@@ -228,6 +250,14 @@ class ConvertTab(QWidget):
         self._custom_edit.setVisible(checked)
 
     def _on_pdf_toggled(self, checked: bool):
+        if checked:
+            engine = detect_engine()
+            if engine == PdfEngine.ASPOSE:
+                self._pdf_hint.setText('将使用 Aspose.Words 高质量转换，所有文件共用一次 JVM 启动')
+            elif engine == PdfEngine.NONE:
+                self._pdf_hint.setText('未检测到可用引擎，请先构建 docx2pdf.exe 或安装 WPS / Office / LibreOffice')
+            else:
+                self._pdf_hint.setText(f'将使用 {engine.name} 转换，速度较慢')
         self._pdf_hint.setVisible(checked)
 
     def _on_sibling_toggled(self, checked: bool):
