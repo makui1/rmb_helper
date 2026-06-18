@@ -8,10 +8,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
-from docxtpl import DocxTemplate, InlineImage
-from docx.shared import Emu, Mm, Pt
-from docx.enum.text import WD_LINE_SPACING
-
 from .lrmx import LrmxFile
 
 
@@ -224,6 +220,7 @@ def _tc_at_grid_col(tr, target_col: int):
 
 def _shrink_para_by_1pt(para, fallback_pt: float = 10.5, target_pt: float = 13.5) -> bool:
     """Set every run's font size to target_pt. Returns True if anything changed."""
+    from docx.shared import Pt
     if not para.runs:
         return False
     font_pt = _para_font_size_pt(para) or fallback_pt
@@ -300,6 +297,7 @@ class DocxExporter:
         self._jianli_lines: list[str] = []
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
+        from docxtpl import DocxTemplate
         tpl = DocxTemplate(BytesIO(self._template_bytes))
         context = self._build_context(lrmx, tpl)
         tpl.render(context)
@@ -307,7 +305,7 @@ class DocxExporter:
         tpl.save(out)
         self._post_process(out)
 
-    def _build_context(self, lrmx: LrmxFile, tpl: DocxTemplate) -> dict:
+    def _build_context(self, lrmx: LrmxFile, tpl) -> dict:
         raw = lrmx.as_dict()
         birth_ym = _INVIS.sub('', raw.get('ChuShengNianYue', ''))
 
@@ -393,6 +391,7 @@ class DocxExporter:
 
     @staticmethod
     def _shrink_cell_if_needed(cell) -> bool:
+        from docx.shared import Pt
         cell_w = cell.width
         if not cell_w:
             return False
@@ -462,6 +461,8 @@ class DocxExporter:
         at the first-tier font (14pt) as a reference, looks up _JIANLI_FONT_TIERS,
         and applies the target font/spacing.
         """
+        from docx.shared import Pt
+        from docx.enum.text import WD_LINE_SPACING
         # ── 第一步：找到简历单元格，获取宽度 ──────────────────────────────────
         jianli_cells: list = []
         seen: set[int] = set()
@@ -605,7 +606,9 @@ class DocxExporter:
         self._photo_cell_cache = result
         return result if result[0] > 0 else None
 
-    def _decode_photo(self, b64: str, tpl: DocxTemplate) -> 'InlineImage | str':
+    def _decode_photo(self, b64: str, tpl) -> 'InlineImage | str':
+        from docxtpl import InlineImage
+        from docx.shared import Emu, Mm
         b64 = _INVIS.sub('', b64)
         if not b64:
             return ''

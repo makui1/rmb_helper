@@ -6,12 +6,11 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QStackedWidget, QFrame, QSplitter,
     QApplication,
 )
-from PySide6.QtCore import Qt, QPoint, QSize, QEvent
+from PySide6.QtCore import Qt, QPoint, QSize, QEvent, QSettings
 from PySide6.QtGui import QIcon, QCursor
 from app.ui.widgets.file_panel import LrmxFilePanel
 
 from app.ui.style import QSS
-from app.ui.tabs.settings_tab import SettingsTab
 
 _ASSETS = Path(__file__).parent / 'assets'
 
@@ -179,6 +178,10 @@ class MainWindow(QMainWindow):
         self._file_panel: LrmxFilePanel | None = None
         self._resize_cursor_set: bool = False
         self._build_ui()
+        self._settings = QSettings('rmb_helper', 'rmb_helper')
+        geom = self._settings.value('window/geometry')
+        if geom:
+            self.restoreGeometry(geom)
         if sys.platform != 'win32':
             QApplication.instance().installEventFilter(self)
 
@@ -235,25 +238,17 @@ class MainWindow(QMainWindow):
 
         # 内容区
         from app.ui.tabs.convert_tab import ConvertTab
-        from app.ui.tabs.compat_tab import CompatTab
-        from app.ui.tabs.verify_tab import VerifyTab
 
         self._file_panel = LrmxFilePanel()
         self._file_panel.setMinimumWidth(180)
         self._file_panel.setContentsMargins(8,15,0,15)
 
         convert_tab = ConvertTab(self._file_panel)
-        compat_tab = CompatTab(self._file_panel)
-        verify_tab = VerifyTab(self._file_panel)
+        convert_tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(convert_tab)    # index 0 → 批量转换
-        self._stack.addWidget(compat_tab)     # index 1 → 版本兼容
-        self._stack.addWidget(verify_tab)     # index 2 → 批量核验
-        self._stack.addWidget(SettingsTab())  # index 3 → 设置
-
-        for tab in (convert_tab, compat_tab, verify_tab):
-            tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
+        self._stack.addWidget(convert_tab)
+        self._tab_widgets: dict[int, QWidget] = {0: convert_tab}
 
         content_splitter = QSplitter(Qt.Orientation.Horizontal)
         content_splitter.setChildrenCollapsible(False)
@@ -395,9 +390,27 @@ class MainWindow(QMainWindow):
         return btn
 
     def _switch_tab(self, index: int):
-        self._stack.setCurrentIndex(index)
+        if index not in self._tab_widgets:
+            if index == 1:
+                from app.ui.tabs.compat_tab import CompatTab
+                tab = CompatTab(self._file_panel)
+            elif index == 2:
+                from app.ui.tabs.verify_tab import VerifyTab
+                tab = VerifyTab(self._file_panel)
+            else:
+                from app.ui.tabs.settings_tab import SettingsTab
+                tab = SettingsTab()
+            if hasattr(tab, 'busy_changed'):
+                tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
+            self._stack.addWidget(tab)
+            self._tab_widgets[index] = tab
+        self._stack.setCurrentWidget(self._tab_widgets[index])
         for i, btn in enumerate(self._nav_btns):
             btn.setChecked(i == index)
         if self._file_panel:
-            widget = self._stack.widget(index)
+            widget = self._tab_widgets[index]
             self._file_panel.setVisible(getattr(widget, 'USES_FILE_PANEL', False))
+
+    def closeEvent(self, event):
+        self._settings.setValue('window/geometry', self.saveGeometry())
+        super().closeEvent(event)
