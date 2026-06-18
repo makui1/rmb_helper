@@ -36,12 +36,15 @@ class _Worker(QThread):
         start = time.monotonic()
         total = len(self.files)
 
+        # ── 模板准备（各一次） ────────────────────────────────────────
         try:
-            template_path = get_template_path()
+            template_bytes = get_template_path().read_bytes()
         except FileNotFoundError as e:
             self.log.emit(f'✗ {e}')
             self.finished.emit(0, total, 0.0)
             return
+
+        cell_size = DocxExporter.probe_cell_size(template_bytes)
 
         pdf_exporter = PdfExporter()
         pdf_available = False
@@ -50,7 +53,9 @@ class _Worker(QThread):
             if not pdf_available:
                 self.log.emit('△ 未检测到可用 PDF 渲染引擎，PDF 输出已跳过')
 
+        # ── 阶段一：串行生成 DOCX ────────────────────────────────────
         succeeded: list[bool] = [False] * total
+        pdf_jobs: list[tuple[Path, Path]] = []
         tmp_dirs: set[Path] = set()
 
         for idx, lrmx_path in enumerate(self.files):
@@ -62,21 +67,19 @@ class _Worker(QThread):
 
                 if self.do_docx:
                     docx_path = out_dir / (stem + '.docx')
-                    DocxExporter(template_path).export(lf, docx_path)
+                    DocxExporter(template_bytes, cell_size).export(lf, docx_path)
                     self.log.emit(f'✓ {stem} → docx 完成 {num}')
-                    if self.do_pdf and pdf_available:
-                        pdf_exporter.export(docx_path, out_dir)
-                        self.log.emit(f'✓ {stem} → pdf 完成 {num}')
+                    if pdf_available:
+                        pdf_jobs.append((docx_path, out_dir))
                     succeeded[idx] = True
 
-                elif self.do_pdf and pdf_available:
+                elif pdf_available:
                     tmp_dir = out_dir / '.tmp_docx'
                     tmp_dirs.add(tmp_dir)
                     tmp_dir.mkdir(parents=True, exist_ok=True)
                     tmp_docx = tmp_dir / (stem + '.docx')
-                    DocxExporter(template_path).export(lf, tmp_docx)
-                    pdf_exporter.export(tmp_docx, out_dir)
-                    self.log.emit(f'✓ {stem} → pdf 完成 {num}')
+                    DocxExporter(template_bytes, cell_size).export(lf, tmp_docx)
+                    pdf_jobs.append((tmp_docx, out_dir))
                     succeeded[idx] = True
 
                 else:
@@ -85,6 +88,22 @@ class _Worker(QThread):
             except Exception as e:
                 self.log.emit(f'✗ {Path(lrmx_path).name}: {e} {num}')
 
+        # ── 阶段二：并行 PDF ─────────────────────────────────────────
+        if pdf_jobs:
+            pdf_total = len(pdf_jobs)
+            pdf_done_count = [0]
+
+            def _on_pdf(stem: str, pdf_path: 'str | None', err: str) -> None:
+                pdf_done_count[0] += 1
+                n = f'({pdf_done_count[0]}/{pdf_total})'
+                if err:
+                    self.log.emit(f'✗ {stem}: {err} {n}')
+                else:
+                    self.log.emit(f'✓ {stem} → pdf 完成 {n}')
+
+            pdf_exporter.export_parallel(pdf_jobs, on_progress=_on_pdf)
+
+        # ── 收尾 ────────────────────────────────────────────────────
         for tmp_dir in tmp_dirs:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
