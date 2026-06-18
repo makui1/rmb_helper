@@ -176,9 +176,8 @@ def test_export_photo_empty_string_when_no_photo(sample_lrmx, tmp_path):
 
 
 def test_export_raises_if_template_missing(sample_lrmx, tmp_path):
-    exporter = DocxExporter(tmp_path / 'nonexistent.docx')
     with pytest.raises(Exception):
-        exporter.export(LrmxFile(sample_lrmx), tmp_path / 'out.docx')
+        exporter = DocxExporter(tmp_path / 'nonexistent.docx')
 
 
 def test_build_context_strips_invisible(sample_lrmx, tmp_path):
@@ -302,3 +301,35 @@ def test_build_context_retire_field(sample_lrmx, tmp_path):
     # DaoLingNianYue 205501, ChuShengNianYue 199001 → 65 years old at retirement
     assert '2055.01' in ctx['DaoLingNianYue']
     assert '65岁' in ctx['DaoLingNianYue']
+
+
+from app.core.docx_exporter import get_template_path
+
+
+def test_docx_exporter_accepts_bytes():
+    """DocxExporter 可以用 bytes 构造，不读磁盘。"""
+    template_bytes = get_template_path().read_bytes()
+    exporter = DocxExporter(template_bytes)
+    assert exporter._template_bytes == template_bytes
+
+
+def test_probe_cell_size_returns_two_int_tuple():
+    """probe_cell_size 始终返回长度为 2 的 int 元组。"""
+    template_bytes = get_template_path().read_bytes()
+    result = DocxExporter.probe_cell_size(template_bytes)
+    assert isinstance(result, tuple) and len(result) == 2
+    assert all(isinstance(v, int) for v in result)
+
+
+def test_injected_cell_size_bypasses_probe():
+    """外部传入 cell_size 时，_get_photo_cell_size 直接返回，不重新扫描。"""
+    template_bytes = get_template_path().read_bytes()
+    exporter = DocxExporter(template_bytes, cell_size=(914400, 1143000))
+    assert exporter._get_photo_cell_size() == (914400, 1143000)
+
+
+def test_sentinel_cell_size_returns_none():
+    """cell_size=(-1, -1) 表示已探测但未找到，_get_photo_cell_size 返回 None。"""
+    template_bytes = get_template_path().read_bytes()
+    exporter = DocxExporter(template_bytes, cell_size=(-1, -1))
+    assert exporter._get_photo_cell_size() is None

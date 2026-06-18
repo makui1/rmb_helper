@@ -262,15 +262,21 @@ def _para_font_size_pt(para) -> Optional[float]:
 # ── Exporter ──────────────────────────────────────────────────────────────────
 
 class DocxExporter:
-    def __init__(self, template_path: Path) -> None:
-        self.template_path = Path(template_path)
-        self._photo_cell_cache: Optional[tuple[int, int]] = None  # (width_emu, height_emu)
-        self._xueli_shrink_text: Optional[str] = None   # XueLi text that needs post-shrink
-        self._jianli_line_count: int = 0                   # number of rendered JianLi lines
-        self._jianli_lines: list[str] = []                 # formatted lines for visual estimation
+    def __init__(self, template: 'bytes | Path', cell_size: 'tuple[int, int] | None' = None) -> None:
+        if isinstance(template, bytes):
+            self._template_bytes: bytes = template
+        else:
+            self._template_bytes = Path(template).read_bytes()
+        # cell_size=None → probe lazily on first use
+        # cell_size=(w,h) with w>0 → found, use directly
+        # cell_size=(-1,-1) → probed externally, not found
+        self._photo_cell_cache: tuple[int, int] | None = cell_size
+        self._xueli_shrink_text: str | None = None
+        self._jianli_line_count: int = 0
+        self._jianli_lines: list[str] = []
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
-        tpl = DocxTemplate(self.template_path)
+        tpl = DocxTemplate(BytesIO(self._template_bytes))
         context = self._build_context(lrmx, tpl)
         tpl.render(context)
         out = Path(output_path)
@@ -486,13 +492,14 @@ class DocxExporter:
 
     # ── Photo ────────────────────────────────────────────────────────────────
 
-    def _get_photo_cell_size(self) -> Optional[tuple[int, int]]:
-        """Return (width_emu, height_emu) of the photo cell, or None."""
-        if self._photo_cell_cache is not None:
-            return self._photo_cell_cache if self._photo_cell_cache[0] > 0 else None
+    @staticmethod
+    def probe_cell_size(template_bytes: bytes) -> tuple[int, int]:
+        """扫描模板，返回照片单元格 (width_emu, height_emu)。
+        找不到时返回 (-1, -1)。供批量转换前一次性调用。
+        """
         try:
             from docx import Document as DocxDoc
-            doc = DocxDoc(self.template_path)
+            doc = DocxDoc(BytesIO(template_bytes))
             for table in doc.tables:
                 trs = table._tbl.findall(f'{{{_W}}}tr')
                 for tr_idx, tr in enumerate(trs):
@@ -503,7 +510,6 @@ class DocxExporter:
                         vm = tc_pr.find(f'{{{_W}}}vMerge') if tc_pr is not None else None
                         if vm is not None and vm.get(f'{{{_W}}}val', '') != 'restart':
                             continue
-                        # Cell width from <w:tcW w:w>
                         cell_w = 0
                         if tc_pr is not None:
                             tc_w_el = tc_pr.find(f'{{{_W}}}tcW')
@@ -511,15 +517,13 @@ class DocxExporter:
                                 w_val = tc_w_el.get(f'{{{_W}}}w')
                                 w_type = tc_w_el.get(f'{{{_W}}}type', '')
                                 if w_val and w_type == 'dxa':
-                                    cell_w = int(w_val) * 635  # twips → EMU
-                        # Fall back to python-docx row cell width
+                                    cell_w = int(w_val) * 635
                         if cell_w == 0:
                             for row in table.rows:
                                 for cell in row.cells:
                                     if cell._tc is tc and cell.width:
                                         cell_w = int(cell.width)
                                         break
-                        # Accumulate cell height across merged rows
                         grid_col = _grid_col_of(tr, tc)
                         total_h = _tr_height_emu(tr)
                         for next_tr in trs[tr_idx + 1:]:
@@ -533,12 +537,18 @@ class DocxExporter:
                             else:
                                 break
                         if cell_w > 0 and total_h > 0:
-                            self._photo_cell_cache = (cell_w, total_h)
-                            return self._photo_cell_cache
+                            return (cell_w, total_h)
         except Exception:
             pass
-        self._photo_cell_cache = (-1, -1)
-        return None
+        return (-1, -1)
+
+    def _get_photo_cell_size(self) -> Optional[tuple[int, int]]:
+        """返回照片单元格 (width_emu, height_emu)，找不到返回 None。"""
+        if self._photo_cell_cache is not None:
+            return self._photo_cell_cache if self._photo_cell_cache[0] > 0 else None
+        result = DocxExporter.probe_cell_size(self._template_bytes)
+        self._photo_cell_cache = result
+        return result if result[0] > 0 else None
 
     def _decode_photo(self, b64: str, tpl: DocxTemplate) -> 'InlineImage | str':
         b64 = _INVIS.sub('', b64)
