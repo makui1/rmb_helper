@@ -152,6 +152,7 @@ class LrmxFilePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._scan_worker = None
+        self._path_set: set[str] = set()
         self.setAcceptDrops(True)
         self.setMinimumHeight(60)
         self._build_ui()
@@ -223,10 +224,10 @@ class LrmxFilePanel(QWidget):
     def count(self) -> int:
         return self._list.count()
 
-    def add_file(self, path: str):
-        for i in range(self._list.count()):
-            if self._list.item(i).data(Qt.ItemDataRole.UserRole) == path:
-                return
+    def add_file(self, path: str, _emit: bool = True):
+        if path in self._path_set:
+            return
+        self._path_set.add(path)
         item = QListWidgetItem()
         item.setData(Qt.ItemDataRole.UserRole, path)
         item.setSizeHint(QSize(0, 34))
@@ -234,11 +235,13 @@ class LrmxFilePanel(QWidget):
         row = _FileRow(path, item)
         row.removed.connect(self._on_row_removed)
         self._list.setItemWidget(item, row)
-        self.files_changed.emit(self.files())
+        if _emit:
+            self.files_changed.emit(self.files())
 
     # ── internals ──────────────────────────────────────────────────────────────
 
     def _on_row_removed(self, item: QListWidgetItem):
+        self._path_set.discard(item.data(Qt.ItemDataRole.UserRole))
         self._list.takeItem(self._list.row(item))
         self.files_changed.emit(self.files())
 
@@ -248,6 +251,7 @@ class LrmxFilePanel(QWidget):
         self.files_changed.emit(self.files())
 
     def _clear_files(self):
+        self._path_set.clear()
         self._list.clear()
         self.files_changed.emit(self.files())
 
@@ -281,7 +285,8 @@ class LrmxFilePanel(QWidget):
         _BATCH = 20
         if len(paths) <= _BATCH and on_finish is None:
             for p in paths:
-                self.add_file(p)
+                self.add_file(p, _emit=False)
+            self.files_changed.emit(self.files())
             return
 
         dlg = None
@@ -293,10 +298,11 @@ class LrmxFilePanel(QWidget):
             nonlocal remaining
             batch, remaining = remaining[:_BATCH], remaining[_BATCH:]
             for p in batch:
-                self.add_file(p)
+                self.add_file(p, _emit=False)
             if remaining:
                 QTimer.singleShot(0, add_batch)
             else:
+                self.files_changed.emit(self.files())
                 if on_finish:
                     on_finish()
                 elif dlg:
