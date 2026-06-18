@@ -4,9 +4,12 @@ import com.spire.doc.Document;
 import com.spire.doc.FileFormat;
 
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 命令行用法：
@@ -43,11 +46,30 @@ public class Main {
             System.exit(2);
         }
 
-        int total = args.length - 1;
+        // 收集输入路径，支持 @listfile 语法（绕过 Windows 命令行长度限制）
+        List<String> inputPaths = new ArrayList<>();
+        for (int i = 1; i < args.length; i++) {
+            if (args[i].startsWith("@")) {
+                Path listFile = Paths.get(args[i].substring(1));
+                try {
+                    for (String line : Files.readAllLines(listFile, StandardCharsets.UTF_8)) {
+                        line = line.trim();
+                        if (!line.isEmpty()) inputPaths.add(line);
+                    }
+                } catch (Exception e) {
+                    System.err.println("无法读取文件列表 " + listFile + ": " + e.getMessage());
+                    System.exit(2);
+                }
+            } else {
+                inputPaths.add(args[i]);
+            }
+        }
+
+        int total = inputPaths.size();
         int success = 0;
 
-        for (int i = 1; i <= total; i++) {
-            String inputPath = args[i];
+        for (int i = 0; i < total; i++) {
+            String inputPath = inputPaths.get(i);
             Path inPath = Paths.get(inputPath);
             String baseName = inPath.getFileName().toString();
             String pdfName = baseName.replaceAll("(?i)\\.docx$", ".pdf");
