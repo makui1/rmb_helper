@@ -227,25 +227,7 @@ QListWidget#fileList::item:selected {{
     color: {ACCENT};
 }}
 
-/* 文件行内的标签和 × 按钮 */
-QLabel#fileItemName {{
-    color: #333330;
-    font-size: 13px;
-    background: transparent;
-}}
-QPushButton#fileItemRemove {{
-    border-image: url({_ASSETS}/remove.svg);
-    background: transparent;
-    color: #BBBBBB;
-    font-size: 16px;
-    font-weight: bold;
-    padding: 0;
-}}
-QPushButton#fileItemRemove:hover {{
-    border-image: url({_ASSETS}/remove-hover.svg);
-    color: {ACCENT};
-    background: transparent;
-}}
+
 
 /* 拖放提示文字 */
 QLabel#dropHint {{

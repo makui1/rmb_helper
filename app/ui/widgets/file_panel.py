@@ -3,12 +3,16 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
-    QFileDialog, QSizePolicy, QMenu, QDialog, QProgressBar,
+    QFileDialog, QMenu, QDialog, QProgressBar,
+    QStyledItemDelegate, QStyle,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer
+from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer, QModelIndex, QRect
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
+
+_ACCENT       = QColor('#D85A30')
+_ACCENT_LIGHT = QColor(216, 90, 48, 26)   # rgba(216,90,48,0.10)
 
 
 class _FolderScanWorker(QThread):
@@ -57,6 +61,78 @@ class _LoadingDialog(QDialog):
             )
 
 
+class _RowDelegate(QStyledItemDelegate):
+    """Paint-only delegate — no per-item QWidget created."""
+
+    remove_requested = Signal(str)
+
+    _SEP_NORMAL = QColor('#E8E6E0')
+    _SEP_HOVER  = QColor('#1A1A1A')
+    _DEL_ZONE_W = 30      # px — click zone for the × icon on the right
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._icon_file   = QIcon(str(_ASSETS / 'rmb.svg'))
+        self._icon_rm     = QIcon(str(_ASSETS / 'remove.svg'))
+        self._icon_rm_hot = QIcon(str(_ASSETS / 'remove-hover.svg'))
+        self._hovered_idx  = QModelIndex()
+        self._in_del_zone  = False
+
+    def sizeHint(self, option, index):
+        return QSize(0, 34)
+
+    def paint(self, painter: QPainter, option, index: QModelIndex):
+        painter.save()
+
+        rect      = option.rect
+        is_hover  = (index == self._hovered_idx)
+        is_sel    = bool(option.state & QStyle.StateFlag.State_Selected)
+        name      = index.data(Qt.ItemDataRole.DisplayRole) or ''
+
+        # ── selection / hover background ──────────────────────────────────────
+        if is_sel:
+            painter.fillRect(rect, _ACCENT_LIGHT)
+
+        # ── file icon ─────────────────────────────────────────────────────────
+        icon_rect = QRect(rect.x() + 10, rect.y() + (rect.height() - 16) // 2, 16, 16)
+        self._icon_file.paint(painter, icon_rect)
+
+        # ── filename text ─────────────────────────────────────────────────────
+        del_w    = self._DEL_ZONE_W if is_hover else 0
+        text_rect = rect.adjusted(36, 0, -(del_w + 8), 0)
+        elided   = painter.fontMetrics().elidedText(
+            name, Qt.TextElideMode.ElideRight, text_rect.width()
+        )
+        painter.setPen(_ACCENT if is_sel else QColor('#333330'))
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+            elided,
+        )
+
+        # ── bottom separator ──────────────────────────────────────────────────
+        painter.setPen(QPen(self._SEP_HOVER if is_hover else self._SEP_NORMAL, 1))
+        y = rect.bottom()
+        painter.drawLine(rect.x() + 10, y, rect.right() - 10, y)
+
+        # ── × icon (hovered row only) ─────────────────────────────────────────
+        if is_hover:
+            rm_icon = self._icon_rm_hot if self._in_del_zone else self._icon_rm
+            rm_x    = rect.right() - self._DEL_ZONE_W + (self._DEL_ZONE_W - 16) // 2
+            rm_rect = QRect(rm_x, rect.y() + (rect.height() - 16) // 2, 16, 16)
+            rm_icon.paint(painter, rm_rect)
+
+        painter.restore()
+
+    def editorEvent(self, event, model, option, index):
+        if (event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+                and event.position().x() >= option.rect.right() - self._DEL_ZONE_W):
+            self.remove_requested.emit(index.data(Qt.ItemDataRole.UserRole))
+            return True
+        return False
+
+
 class _FileList(QListWidget):
     empty_clicked = Signal()
     _HINT = '拖放 .lrmx 文件或文件夹至此，或点击「添加」'
@@ -65,13 +141,43 @@ class _FileList(QListWidget):
         super().__init__(parent)
         self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.viewport().installEventFilter(self)
+        self.viewport().setMouseTracking(True)
+        self._delegate: _RowDelegate | None = None
+
+    def set_delegate(self, delegate: _RowDelegate):
+        self._delegate = delegate
 
     def eventFilter(self, obj, event):
-        if (obj is self.viewport()
-                and event.type() == QEvent.Type.MouseButtonPress
-                and event.button() == Qt.MouseButton.LeftButton
-                and self.count() == 0):
-            self.empty_clicked.emit()
+        if obj is self.viewport() and self._delegate is not None:
+            t = event.type()
+
+            if t == QEvent.Type.MouseMove:
+                index   = self.indexAt(event.pos())
+                in_del  = False
+                if index.isValid() and index == self._delegate._hovered_idx:
+                    in_del = event.pos().x() >= self.visualRect(index).right() - _RowDelegate._DEL_ZONE_W
+
+                changed = (index != self._delegate._hovered_idx
+                           or in_del != self._delegate._in_del_zone)
+                self._delegate._hovered_idx  = index
+                self._delegate._in_del_zone  = in_del
+                if changed:
+                    self.viewport().update()
+                self.viewport().setCursor(
+                    Qt.CursorShape.PointingHandCursor if in_del else Qt.CursorShape.ArrowCursor
+                )
+
+            elif t == QEvent.Type.Leave:
+                self._delegate._hovered_idx = QModelIndex()
+                self._delegate._in_del_zone = False
+                self.viewport().unsetCursor()
+                self.viewport().update()
+
+            elif (t == QEvent.Type.MouseButtonPress
+                  and event.button() == Qt.MouseButton.LeftButton
+                  and self.count() == 0):
+                self.empty_clicked.emit()
+
         return super().eventFilter(obj, event)
 
     def paintEvent(self, event):
@@ -88,57 +194,6 @@ class _FileList(QListWidget):
                 self._HINT,
             )
             painter.end()
-
-
-class _FileRow(QWidget):
-    removed = Signal(QListWidgetItem)
-    _SEP_NORMAL = QColor('#E8E6E0')
-    _SEP_HOVER  = QColor('#1A1A1A')
-
-    def __init__(self, path: str, item: QListWidgetItem, parent=None):
-        super().__init__(parent)
-        self._item = item
-        self._hovered = False
-        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 8, 6)
-        layout.setSpacing(8)
-
-        icon = QLabel()
-        icon.setPixmap(QIcon(str(_ASSETS / 'rmb.svg')).pixmap(QSize(16, 16)))
-        icon.setFixedWidth(22)
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(icon)
-
-        name = QLabel(Path(path).name)
-        name.setObjectName('fileItemName')
-        name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        layout.addWidget(name, 1)
-
-        btn = QPushButton()
-        btn.setObjectName('fileItemRemove')
-        btn.setFixedSize(20, 20)
-        btn.clicked.connect(lambda: self.removed.emit(self._item))
-        layout.addWidget(btn)
-
-    def event(self, e: QEvent) -> bool:
-        if e.type() == QEvent.Type.HoverEnter:
-            self._hovered = True
-            self.update()
-        elif e.type() == QEvent.Type.HoverLeave:
-            self._hovered = False
-            self.update()
-        return super().event(e)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        color = self._SEP_HOVER if self._hovered else self._SEP_NORMAL
-        painter.setPen(QPen(color, 1))
-        y = self.height() - 1
-        painter.drawLine(10, y, self.width() - 10, y)
-        painter.end()
 
 
 class LrmxFilePanel(QWidget):
@@ -191,8 +246,13 @@ class LrmxFilePanel(QWidget):
         header.addWidget(self._clear_btn)
         layout.addLayout(header)
 
+        self._delegate = _RowDelegate()
+        self._delegate.remove_requested.connect(self._on_path_removed)
+
         self._list = _FileList()
         self._list.setObjectName('fileList')
+        self._list.set_delegate(self._delegate)
+        self._list.setItemDelegate(self._delegate)
         self._list.empty_clicked.connect(
             lambda: self._add_menu.exec(
                 self._add_btn.mapToGlobal(self._add_btn.rect().bottomLeft())
@@ -206,9 +266,9 @@ class LrmxFilePanel(QWidget):
         super().resizeEvent(event)
         narrow = self.width() < self._BTN_TEXT_THRESHOLD
         for btn, label, icon in (
-            (self._add_btn, '添加', str(_ASSETS / 'add-btn.svg')),
-            (self._del_btn, '删除选中', str(_ASSETS / 'delete-btn.svg')),
-            (self._clear_btn, '清空', str(_ASSETS / 'clear-btn.svg')),
+            (self._add_btn,  '添加',   str(_ASSETS / 'add-btn.svg')),
+            (self._del_btn,  '删除选中', str(_ASSETS / 'delete-btn.svg')),
+            (self._clear_btn, '清空',  str(_ASSETS / 'clear-btn.svg')),
         ):
             btn.setText('' if narrow else label)
             btn.setIcon(QIcon(icon) if narrow else QIcon())
@@ -228,25 +288,26 @@ class LrmxFilePanel(QWidget):
         if path in self._path_set:
             return
         self._path_set.add(path)
-        item = QListWidgetItem()
+        item = QListWidgetItem(Path(path).name)
         item.setData(Qt.ItemDataRole.UserRole, path)
         item.setSizeHint(QSize(0, 34))
         self._list.addItem(item)
-        row = _FileRow(path, item)
-        row.removed.connect(self._on_row_removed)
-        self._list.setItemWidget(item, row)
         if _emit:
             self.files_changed.emit(self.files())
 
     # ── internals ──────────────────────────────────────────────────────────────
 
-    def _on_row_removed(self, item: QListWidgetItem):
-        self._path_set.discard(item.data(Qt.ItemDataRole.UserRole))
-        self._list.takeItem(self._list.row(item))
+    def _on_path_removed(self, path: str):
+        self._path_set.discard(path)
+        for i in range(self._list.count()):
+            if self._list.item(i).data(Qt.ItemDataRole.UserRole) == path:
+                self._list.takeItem(i)
+                break
         self.files_changed.emit(self.files())
 
     def _remove_selected(self):
         for item in self._list.selectedItems():
+            self._path_set.discard(item.data(Qt.ItemDataRole.UserRole))
             self._list.takeItem(self._list.row(item))
         self.files_changed.emit(self.files())
 
