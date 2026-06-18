@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QCheckBox, QLineEdit, QComboBox, QTextEdit,
-    QFileDialog, QSizePolicy,
+    QFileDialog, QSizePolicy, QProgressBar,
 )
 from PySide6.QtCore import Qt, QSettings, QThread, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
@@ -21,6 +21,7 @@ _ASSETS = Path(__file__).parent.parent / 'assets'
 class _Worker(QThread):
     log = Signal(str)                   # message (prefixed with ✓ / △ / ✗)
     finished = Signal(int, int, float)  # done, total, elapsed_seconds
+    progress = Signal(int)              # current step
 
     def __init__(self, files, output_dir, naming_rule, do_docx, do_pdf,
                  sibling_dir=False):
@@ -35,6 +36,7 @@ class _Worker(QThread):
     def run(self):
         start = time.monotonic()
         total = len(self.files)
+        total_steps = total * (2 if self.do_pdf else 1)
 
         # ── 模板准备（各一次） ────────────────────────────────────────
         try:
@@ -96,6 +98,7 @@ class _Worker(QThread):
 
             def _on_docx(stem: str, output_path: 'str | None', err: str) -> None:
                 docx_done_count[0] += 1
+                self.progress.emit(docx_done_count[0])
                 n = f'({docx_done_count[0]}/{docx_total})'
                 if err:
                     self.log.emit(f'✗ {stem}: {err} {n}')
@@ -118,6 +121,7 @@ class _Worker(QThread):
 
             def _on_pdf(stem: str, pdf_path: 'str | None', err: str) -> None:
                 pdf_done_count[0] += 1
+                self.progress.emit(len(docx_job_args) + pdf_done_count[0])
                 n = f'({pdf_done_count[0]}/{pdf_total})'
                 if err:
                     self.log.emit(f'✗ {stem}: {err} {n}')
@@ -236,6 +240,13 @@ class ConvertTab(QWidget):
         rule_row.addStretch()
         rule_row.addWidget(self._run_btn)
         bot_layout.addLayout(rule_row)
+
+        self._progress = QProgressBar()
+        self._progress.setObjectName('loadingBar')
+        self._progress.setFixedHeight(4)
+        self._progress.setTextVisible(False)
+        self._progress.setVisible(False)
+        bot_layout.addWidget(self._progress)
 
         # ── 日志 ───────────────────────────────────────────────────────────────
         log_header = QHBoxLayout()
@@ -369,12 +380,19 @@ class ConvertTab(QWidget):
             do_pdf=self._chk_pdf.isChecked(),
             sibling_dir=sibling,
         )
+        total_steps = len(files) * (2 if self._chk_pdf.isChecked() else 1)
+        self._progress.setRange(0, total_steps)
+        self._progress.setValue(0)
+        self._progress.setVisible(True)
+
         self._worker.log.connect(self._append_log)
+        self._worker.progress.connect(self._progress.setValue)
         self._worker.finished.connect(self._on_finished)
         self.busy_changed.emit(True)
         self._worker.start()
 
     def _on_finished(self, done: int, total: int, elapsed: float):
+        self._progress.setVisible(False)
         self._run_btn.setEnabled(True)
         self.busy_changed.emit(False)
         self._append_log(f'完成 {done}/{total}，耗时 {elapsed:.1f}s')

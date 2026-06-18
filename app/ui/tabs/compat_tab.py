@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
     QCheckBox, QLineEdit, QComboBox, QTextEdit,
-    QFileDialog, QFrame,
+    QFileDialog, QFrame, QProgressBar,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
@@ -26,6 +26,7 @@ _ASSETS = Path(__file__).parent.parent / 'assets'
 class _CompatWorker(QThread):
     log = Signal(str)
     finished = Signal(int, int)  # processed, total
+    progress = Signal(int)       # current step
 
     def __init__(self, files, male_limit, female_limit, output_dir=None, sibling=False, update_daolignianue=True):
         super().__init__()
@@ -39,7 +40,7 @@ class _CompatWorker(QThread):
     def run(self):
         total = len(self.files)
         processed = 0
-        for f in self.files:
+        for i, f in enumerate(self.files):
             path = Path(f)
             if self.sibling or self.output_dir is None:
                 out_path = None           # overwrite in-place
@@ -58,6 +59,7 @@ class _CompatWorker(QThread):
                     self.log.emit(f'✗ {msg}')
             except Exception as e:
                 self.log.emit(f'✗ {path.name}：{e}')
+            self.progress.emit(i + 1)
         self.finished.emit(processed, total)
 
 
@@ -158,6 +160,13 @@ class CompatTab(QWidget):
         self._run_btn.clicked.connect(self._run)
         run_row.addWidget(self._run_btn)
         bot_layout.addLayout(run_row)
+
+        self._progress = QProgressBar()
+        self._progress.setObjectName('loadingBar')
+        self._progress.setFixedHeight(4)
+        self._progress.setTextVisible(False)
+        self._progress.setVisible(False)
+        bot_layout.addWidget(self._progress)
 
         # ── 日志 ───────────────────────────────────────────────────────────────
         log_header = QHBoxLayout()
@@ -269,12 +278,18 @@ class CompatTab(QWidget):
             sibling=not save_copy,
             update_daolignianue=self._chk_update_daolignianue.isChecked(),
         )
+        self._progress.setRange(0, len(files))
+        self._progress.setValue(0)
+        self._progress.setVisible(True)
+
         self._worker.log.connect(self._append_log)
+        self._worker.progress.connect(self._progress.setValue)
         self._worker.finished.connect(self._on_finished)
         self.busy_changed.emit(True)
         self._worker.start()
 
     def _on_finished(self, processed: int, total: int):
+        self._progress.setVisible(False)
         self._run_btn.setEnabled(True)
         self.busy_changed.emit(False)
         self._append_log(f'── 完成：共 {total} 个文件，处理 {processed} 个 ──')

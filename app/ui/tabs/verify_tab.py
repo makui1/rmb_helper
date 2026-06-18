@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QCheckBox, QMessageBox,
     QRadioButton, QButtonGroup, QFileDialog,
-    QSizePolicy, QFrame,
+    QSizePolicy, QFrame, QProgressBar,
     QScrollArea, QSpinBox, QLayout,
     QDialog, QGridLayout,
 )
@@ -907,6 +907,13 @@ class VerifyTab(QWidget):
 
         layout.addWidget(self._summary_bar)
 
+        self._progress = QProgressBar()
+        self._progress.setObjectName('loadingBar')
+        self._progress.setFixedHeight(4)
+        self._progress.setTextVisible(False)
+        self._progress.setVisible(False)
+        layout.addWidget(self._progress)
+
         sep_result = QFrame()
         sep_result.setFrameShape(QFrame.Shape.HLine)
         sep_result.setObjectName('resultTopSep')
@@ -1174,6 +1181,10 @@ class VerifyTab(QWidget):
         self._loading_overlay.raise_()
         self._loading_overlay.show()
 
+        self._progress.setRange(0, len(files))
+        self._progress.setValue(0)
+        self._progress.setVisible(True)
+
         self._worker = _VerifyWorker(handler)
         self._worker.result_ready.connect(self._on_result)
         self._worker.finished.connect(self._on_finished)
@@ -1313,6 +1324,7 @@ class VerifyTab(QWidget):
                 item.widget().deleteLater()
 
     def _back_to_setup(self):
+        self._progress.setVisible(False)
         self.busy_changed.emit(False)
         self._loading_overlay.hide()
         self._update_loading_overlay.hide()
@@ -1333,6 +1345,7 @@ class VerifyTab(QWidget):
         self._clear_update_results()
 
     def _on_result(self, result: PersonResult):
+        self._progress.setValue(self._progress.value() + 1)
         status = result.status if result.status in self._counts else 'error'
         self._counts[status] += 1
         self._count_labels[status].setText(str(self._counts[status]))
@@ -1343,6 +1356,7 @@ class VerifyTab(QWidget):
         self._result_vbox.insertWidget(idx, row_widget)
 
     def _on_finished(self):
+        self._progress.setVisible(False)
         self.busy_changed.emit(False)
         QTimer.singleShot(400, self._loading_overlay.hide)
         self._update_export_btn()
