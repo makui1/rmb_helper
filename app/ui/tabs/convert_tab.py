@@ -11,7 +11,7 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.core.lrmx import LrmxFile
 from app.core.docx_exporter import DocxExporter, get_template_path
-from app.core.pdf_exporter import PdfExporter, detect_engine, PdfEngine
+from app.core.pdf_exporter import PdfExporter
 from app.utils.naming import apply_rule, PRESETS
 from app.ui.widgets.file_panel import LrmxFilePanel
 
@@ -242,13 +242,7 @@ class ConvertTab(QWidget):
 
     def _on_pdf_toggled(self, checked: bool):
         if checked:
-            engine = detect_engine()
-            if engine == PdfEngine.SPIRE:
-                self._pdf_hint.setText('将使用 Spire.Doc Free 转换（注意：免费版超过3页会加水印）')
-            elif engine == PdfEngine.NONE:
-                self._pdf_hint.setText('未检测到可用引擎，请运行 pip install spire-doc-free 或安装 WPS / Office / LibreOffice')
-            else:
-                self._pdf_hint.setText(f'将使用 {engine.name} 转换，速度较慢')
+            self._pdf_hint.setText('将使用 Spire.Doc Free 转换（注意：免费版超过3页会加水印）')
         self._pdf_hint.setVisible(checked)
 
     def _on_sibling_toggled(self, checked: bool):

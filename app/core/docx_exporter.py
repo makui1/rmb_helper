@@ -544,6 +544,9 @@ class DocxExporter:
         b64 = _INVIS.sub('', b64)
         if not b64:
             return ''
+        # Strip data URI prefix, e.g. "data:image/png;base64,"
+        if ',' in b64:
+            b64 = b64.split(',', 1)[1]
         try:
             from PIL import Image
             img_bytes = base64.b64decode(b64)
@@ -552,6 +555,8 @@ class DocxExporter:
                 cell_w_emu, cell_h_emu = size
                 # Crop left/right to match cell aspect ratio, then fit by height
                 img = Image.open(BytesIO(img_bytes))
+                if img.mode not in ('RGB', 'L'):
+                    img = img.convert('RGB')
                 pw, ph = img.size
                 target_w = int(ph * cell_w_emu / cell_h_emu)
                 if target_w < pw:
