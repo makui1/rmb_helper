@@ -259,6 +259,30 @@ def _para_font_size_pt(para) -> Optional[float]:
     return None
 
 
+# ── Parallel DOCX worker ──────────────────────────────────────────────────────
+
+from concurrent.futures import ProcessPoolExecutor, as_completed as _as_completed
+from typing import Callable
+
+_g_docx_template_bytes: bytes = b''
+_g_docx_cell_size: 'tuple[int, int]' = (-1, -1)
+
+
+def _init_docx_worker(template_bytes: bytes, cell_size: 'tuple[int, int]') -> None:
+    global _g_docx_template_bytes, _g_docx_cell_size
+    _g_docx_template_bytes = template_bytes
+    _g_docx_cell_size = cell_size
+
+
+def _docx_worker(args: 'tuple[str, str]') -> str:
+    lrmx_path_str, output_path_str = args
+    from pathlib import Path as _Path
+    from app.core.lrmx import LrmxFile as _LrmxFile
+    lf = _LrmxFile(_Path(lrmx_path_str))
+    DocxExporter(_g_docx_template_bytes, _g_docx_cell_size).export(lf, _Path(output_path_str))
+    return output_path_str
+
+
 # ── Exporter ──────────────────────────────────────────────────────────────────
 
 class DocxExporter:
@@ -541,6 +565,37 @@ class DocxExporter:
         except Exception:
             pass
         return (-1, -1)
+
+    @staticmethod
+    def export_parallel(
+        jobs: 'list[tuple[str, str]]',
+        template_bytes: bytes,
+        cell_size: 'tuple[int, int]',
+        on_progress: 'Callable[[str, str | None, str], None] | None' = None,
+    ) -> None:
+        """Parallel DOCX export. jobs = [(lrmx_path_str, output_path_str), ...]"""
+        if not jobs:
+            return
+        import os
+        n = min(os.cpu_count() or 1, len(jobs))
+        with ProcessPoolExecutor(
+            max_workers=n,
+            initializer=_init_docx_worker,
+            initargs=(template_bytes, cell_size),
+        ) as executor:
+            future_to_stem = {
+                executor.submit(_docx_worker, job): Path(job[1]).stem
+                for job in jobs
+            }
+            for future in _as_completed(future_to_stem):
+                stem = future_to_stem[future]
+                try:
+                    output_path = future.result()
+                    if on_progress:
+                        on_progress(stem, output_path, '')
+                except Exception as e:
+                    if on_progress:
+                        on_progress(stem, None, str(e))
 
     def _get_photo_cell_size(self) -> Optional[tuple[int, int]]:
         """返回照片单元格 (width_emu, height_emu)，找不到返回 None。"""

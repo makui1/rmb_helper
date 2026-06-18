@@ -53,9 +53,10 @@ class _Worker(QThread):
             if not pdf_available:
                 self.log.emit('△ 未检测到可用 PDF 渲染引擎，PDF 输出已跳过')
 
-        # ── 阶段一：串行生成 DOCX ────────────────────────────────────
+        # ── 预处理：解析所有 lrmx，计算输出路径 ──────────────────────────
         succeeded: list[bool] = [False] * total
-        pdf_jobs: list[tuple[Path, Path]] = []
+        docx_job_args: list[tuple[str, str]] = []
+        docx_job_meta: list[tuple[int, str, Path]] = []  # (idx, stem, out_dir)
         tmp_dirs: set[Path] = set()
 
         for idx, lrmx_path in enumerate(self.files):
@@ -67,28 +68,50 @@ class _Worker(QThread):
 
                 if self.do_docx:
                     docx_path = out_dir / (stem + '.docx')
-                    DocxExporter(template_bytes, cell_size).export(lf, docx_path)
-                    self.log.emit(f'✓ {stem} → docx 完成 {num}')
-                    if pdf_available:
-                        pdf_jobs.append((docx_path, out_dir))
-                    succeeded[idx] = True
-
+                    docx_job_args.append((lrmx_path, str(docx_path)))
+                    docx_job_meta.append((idx, stem, out_dir))
                 elif pdf_available:
                     tmp_dir = out_dir / '.tmp_docx'
                     tmp_dirs.add(tmp_dir)
                     tmp_dir.mkdir(parents=True, exist_ok=True)
                     tmp_docx = tmp_dir / (stem + '.docx')
-                    DocxExporter(template_bytes, cell_size).export(lf, tmp_docx)
-                    pdf_jobs.append((tmp_docx, out_dir))
-                    succeeded[idx] = True
-
+                    docx_job_args.append((lrmx_path, str(tmp_docx)))
+                    docx_job_meta.append((idx, stem, out_dir))
                 else:
                     succeeded[idx] = True
 
             except Exception as e:
                 self.log.emit(f'✗ {Path(lrmx_path).name}: {e} {num}')
 
-        # ── 阶段二：并行 PDF ─────────────────────────────────────────
+        # ── 阶段一：并行 DOCX ────────────────────────────────────────────
+        pdf_jobs: list[tuple[Path, Path]] = []
+
+        if docx_job_args:
+            docx_total = len(docx_job_args)
+            docx_done_count = [0]
+            output_to_meta: dict[str, tuple[int, str, Path]] = {
+                job[1]: meta
+                for job, meta in zip(docx_job_args, docx_job_meta)
+            }
+
+            def _on_docx(stem: str, output_path: 'str | None', err: str) -> None:
+                docx_done_count[0] += 1
+                n = f'({docx_done_count[0]}/{docx_total})'
+                if err:
+                    self.log.emit(f'✗ {stem}: {err} {n}')
+                else:
+                    idx, _, out_dir = output_to_meta[output_path]
+                    succeeded[idx] = True
+                    if self.do_docx:
+                        self.log.emit(f'✓ {stem} → docx 完成 {n}')
+                    if pdf_available:
+                        pdf_jobs.append((Path(output_path), out_dir))
+
+            DocxExporter.export_parallel(
+                docx_job_args, template_bytes, cell_size, on_progress=_on_docx
+            )
+
+        # ── 阶段二：并行 PDF ─────────────────────────────────────────────
         if pdf_jobs:
             pdf_total = len(pdf_jobs)
             pdf_done_count = [0]
