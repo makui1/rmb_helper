@@ -1,8 +1,10 @@
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from enum import Enum, auto
 from pathlib import Path
+from typing import Callable
 
 
 class PdfEngine(Enum):
@@ -50,6 +52,23 @@ def detect_engine() -> PdfEngine:
     if shutil.which('wps'):
         return PdfEngine.WPS_CLI
     return PdfEngine.NONE
+
+
+def _spire_pdf_worker(args: tuple[str, str]) -> str:
+    """在子进程中运行，独立加载 Spire，将 docx 转为 pdf。
+    args = (docx_path_str, output_dir_str)
+    返回生成的 pdf_path_str。
+    必须是模块级函数，否则无法被 multiprocessing pickle。
+    """
+    docx_path_str, output_dir_str = args
+    from spire.doc import Document, FileFormat
+    from pathlib import Path as _Path
+    pdf_path = _Path(output_dir_str) / (_Path(docx_path_str).stem + '.pdf')
+    doc = Document()
+    doc.LoadFromFile(docx_path_str)
+    doc.SaveToFile(str(pdf_path), FileFormat.PDF)
+    doc.Close()
+    return str(pdf_path)
 
 
 class PdfExporter:
@@ -130,6 +149,34 @@ class PdfExporter:
             check=True, capture_output=True,
         )
         return output_dir / (docx_path.stem + '.pdf')
+
+    def export_parallel(
+        self,
+        jobs: 'list[tuple[Path, Path]]',
+        on_progress: 'Callable[[str, str | None, str], None] | None' = None,
+    ) -> None:
+        """并行转换 docx → pdf。
+        jobs: [(docx_path, output_dir), ...]
+        on_progress(stem, pdf_path_str_or_None, error_str) 每个文件完成时回调。
+        进程数 = min(cpu_count, len(jobs))，as_completed 随完成随回报。
+        """
+        import os
+        n = min(os.cpu_count() or 1, len(jobs))
+        str_jobs = [(str(d), str(o)) for d, o in jobs]
+        with ProcessPoolExecutor(max_workers=n) as executor:
+            future_to_stem = {
+                executor.submit(_spire_pdf_worker, job): Path(job[0]).stem
+                for job in str_jobs
+            }
+            for future in as_completed(future_to_stem):
+                stem = future_to_stem[future]
+                try:
+                    pdf_path = future.result()
+                    if on_progress:
+                        on_progress(stem, pdf_path, '')
+                except Exception as e:
+                    if on_progress:
+                        on_progress(stem, None, str(e))
 
     def _via_com(self, docx_path: Path, output_dir: Path,
                  prog_ids: tuple[str, ...]) -> Path:
