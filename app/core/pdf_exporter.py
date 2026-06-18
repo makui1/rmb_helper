@@ -160,6 +160,8 @@ class PdfExporter:
         on_progress(stem, pdf_path_str_or_None, error_str) 每个文件完成时回调。
         进程数 = min(cpu_count, len(jobs))，as_completed 随完成随回报。
         """
+        if not jobs:
+            return
         import os
         n = min(os.cpu_count() or 1, len(jobs))
         str_jobs = [(str(d), str(o)) for d, o in jobs]

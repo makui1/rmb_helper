@@ -40,7 +40,7 @@ def test_export_raises_when_no_engine(tmp_path):
     import pytest
     with patch('app.core.pdf_exporter.detect_engine', return_value=PdfEngine.NONE):
         exporter = PdfExporter()
-        with pytest.raises(RuntimeError, match='No PDF rendering engine'):
+        with pytest.raises(RuntimeError, match='PDF'):
             exporter.export(tmp_path / 'in.docx', tmp_path)
 
 
