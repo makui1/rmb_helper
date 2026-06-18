@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
     QFileDialog, QMenu, QDialog, QProgressBar,
-    QStyledItemDelegate, QStyle,
+    QStyledItemDelegate, QStyle, QFrame,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer, QModelIndex, QRect
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
@@ -241,15 +241,29 @@ class LrmxFilePanel(QWidget):
         self._clear_btn.setToolTip('清空所有文件')
         self._clear_btn.clicked.connect(self._clear_files)
 
-        self._count_label = QLabel('')
-        self._count_label.setStyleSheet('color: #888880; font-size: 12px;')
-
         header.addWidget(self._add_btn)
         header.addWidget(self._del_btn)
         header.addWidget(self._clear_btn)
-        header.addStretch()
-        header.addWidget(self._count_label)
         layout.addLayout(header)
+
+        # ── 列表容器（带边框，计数固定在顶部）────────────────────────────────
+        container = QFrame()
+        container.setObjectName('fileListContainer')
+        c_layout = QVBoxLayout(container)
+        c_layout.setContentsMargins(0, 0, 0, 0)
+        c_layout.setSpacing(0)
+
+        self._count_label = QLabel('')
+        self._count_label.setObjectName('fileCountLabel')
+        self._count_label.setContentsMargins(10, 5, 10, 5)
+        self._count_label.setVisible(False)
+        c_layout.addWidget(self._count_label)
+
+        self._count_sep = QFrame()
+        self._count_sep.setFixedHeight(1)
+        self._count_sep.setStyleSheet('background-color: #C0BEB8;')
+        self._count_sep.setVisible(False)
+        c_layout.addWidget(self._count_sep)
 
         self._delegate = _RowDelegate()
         self._delegate.remove_requested.connect(self._on_path_removed)
@@ -263,7 +277,8 @@ class LrmxFilePanel(QWidget):
                 self._add_btn.mapToGlobal(self._add_btn.rect().bottomLeft())
             )
         )
-        layout.addWidget(self._list)
+        c_layout.addWidget(self._list)
+        layout.addWidget(container)
 
     _BTN_TEXT_THRESHOLD = 230  # px — below this width, hide button labels
 
@@ -305,7 +320,10 @@ class LrmxFilePanel(QWidget):
     def _emit_changed(self):
         fs = self.files()
         n = len(fs)
-        self._count_label.setText(f'{n} 个文件' if n else '')
+        has = n > 0
+        self._count_label.setText(f'{n} 个文件')
+        self._count_label.setVisible(has)
+        self._count_sep.setVisible(has)
         self.files_changed.emit(fs)
 
     def _on_path_removed(self, path: str):

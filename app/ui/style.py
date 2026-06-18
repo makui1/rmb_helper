@@ -211,10 +211,19 @@ QListWidget::indicator:checked {{
     image: url({_ASSETS}/checkmark.svg);
 }}
 
-/* ── 文件列表：无边框，行间距由 _FileRow 的分割线承担 ─────────────────── */
-QListWidget#fileList {{
+/* ── 文件列表容器（边框/圆角在此，内部 list 无边框）────────────────────── */
+QFrame#fileListContainer {{
     border: 1px solid #C0BEB8;
     border-radius: 6px;
+    background-color: transparent;
+}}
+QLabel#fileCountLabel {{
+    color: #888880;
+    font-size: 12px;
+    background: transparent;
+}}
+QListWidget#fileList {{
+    border: none;
     background-color: transparent;
     outline: none;
 }}
