@@ -139,10 +139,10 @@ class _FileList(QListWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._delegate: _RowDelegate | None = None
         self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.viewport().installEventFilter(self)
         self.viewport().setMouseTracking(True)
-        self._delegate: _RowDelegate | None = None
 
     def set_delegate(self, delegate: _RowDelegate):
         self._delegate = delegate
