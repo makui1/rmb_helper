@@ -241,9 +241,14 @@ class LrmxFilePanel(QWidget):
         self._clear_btn.setToolTip('清空所有文件')
         self._clear_btn.clicked.connect(self._clear_files)
 
+        self._count_label = QLabel('')
+        self._count_label.setStyleSheet('color: #888880; font-size: 12px;')
+
         header.addWidget(self._add_btn)
         header.addWidget(self._del_btn)
         header.addWidget(self._clear_btn)
+        header.addStretch()
+        header.addWidget(self._count_label)
         layout.addLayout(header)
 
         self._delegate = _RowDelegate()
@@ -293,9 +298,15 @@ class LrmxFilePanel(QWidget):
         item.setSizeHint(QSize(0, 34))
         self._list.addItem(item)
         if _emit:
-            self.files_changed.emit(self.files())
+            self._emit_changed()
 
     # ── internals ──────────────────────────────────────────────────────────────
+
+    def _emit_changed(self):
+        fs = self.files()
+        n = len(fs)
+        self._count_label.setText(f'{n} 个文件' if n else '')
+        self.files_changed.emit(fs)
 
     def _on_path_removed(self, path: str):
         self._path_set.discard(path)
@@ -347,7 +358,7 @@ class LrmxFilePanel(QWidget):
         if len(paths) <= _BATCH and on_finish is None:
             for p in paths:
                 self.add_file(p, _emit=False)
-            self.files_changed.emit(self.files())
+            self._emit_changed()
             return
 
         dlg = None
@@ -363,7 +374,7 @@ class LrmxFilePanel(QWidget):
             if remaining:
                 QTimer.singleShot(0, add_batch)
             else:
-                self.files_changed.emit(self.files())
+                self._emit_changed()
                 if on_finish:
                     on_finish()
                 elif dlg:
