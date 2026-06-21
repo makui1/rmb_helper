@@ -26,6 +26,8 @@ def apply_rule(template: str, fields: dict[str, str]) -> str:
         if key not in fields:
             return f'{{{key}}}'
         val = clean_field(fields[key])
+        # 字段值内的非法字符直接删除（不替换成 _），避免尾部多余下划线
+        val = ILLEGAL_CHARS.sub('', val)
         if not val:
             empty.append(key)
         return val
@@ -33,6 +35,7 @@ def apply_rule(template: str, fields: dict[str, str]) -> str:
     result = FIELD_PATTERN.sub(replace, template)
     if empty:
         raise ValueError(f'字段值为空：{", ".join(empty)}')
+    # 模板分隔符（如 _ ）保留；只有模板本身含非法字符时才替换
     result = ILLEGAL_CHARS.sub('_', result)
     if not result:
         raise ValueError('命名结果为空')
