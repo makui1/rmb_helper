@@ -222,6 +222,7 @@ class MainWindow(QMainWindow):
             ('批量格式转换', 'convert.svg'),
             ('批量版本兼容', 'compat.svg'),
             ('批量核验/更新', 'verify.svg'),
+            ('生成家庭关系表',   'export.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
@@ -397,6 +398,9 @@ class MainWindow(QMainWindow):
             elif index == 2:
                 from app.ui.tabs.verify_tab import VerifyTab
                 tab = VerifyTab(self._file_panel)
+            elif index == 3:
+                from app.ui.tabs.family_tab import FamilyTab
+                tab = FamilyTab(self._file_panel)
             else:
                 from app.ui.tabs.settings_tab import SettingsTab
                 tab = SettingsTab()
