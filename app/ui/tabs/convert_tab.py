@@ -23,11 +23,12 @@ class _Worker(QThread):
     finished = Signal(int, int, float)  # done, total, elapsed_seconds
     progress = Signal(int)              # current step
 
-    def __init__(self, files, output_dir, naming_rule, do_docx, do_pdf,
+    def __init__(self, files, output_dir, sub_dir, naming_rule, do_docx, do_pdf,
                  sibling_dir=False):
         super().__init__()
         self.files = files
         self.output_dir = Path(output_dir) if output_dir else None
+        self.sub_dir = sub_dir if sub_dir else False
         self.naming_rule = naming_rule
         self.do_docx = do_docx
         self.do_pdf = do_pdf
@@ -58,7 +59,7 @@ class _Worker(QThread):
         # ── 预处理：解析所有 lrmx，计算输出路径 ──────────────────────────
         succeeded: list[bool] = [False] * total
         docx_job_args: list[tuple[str, str]] = []
-        docx_job_meta: list[tuple[int, str, Path]] = []  # (idx, stem, out_dir)
+        docx_job_meta: list[tuple[int, str, Path]] = []  # (idx, stem, pdf_out_dir)
         tmp_dirs: set[Path] = set()
 
         for idx, lrmx_path in enumerate(self.files):
@@ -66,19 +67,25 @@ class _Worker(QThread):
             try:
                 lf = LrmxFile(Path(lrmx_path))
                 stem = apply_rule(self.naming_rule, lf.as_dict()) or Path(lrmx_path).stem
-                out_dir = Path(lrmx_path).parent if self.sibling_dir else self.output_dir
+                base_dir = Path(lrmx_path).parent if self.sibling_dir else self.output_dir
+
+                # 根据 sub_dir 决定 docx / pdf 各自的落地目录
+                docx_out_dir = (base_dir / 'docx') if self.sub_dir else base_dir
+                pdf_out_dir  = (base_dir / 'pdf')  if self.sub_dir else base_dir
 
                 if self.do_docx:
-                    docx_path = out_dir / (stem + '.docx')
+                    docx_out_dir.mkdir(parents=True, exist_ok=True)
+                    docx_path = docx_out_dir / (stem + '.docx')
                     docx_job_args.append((lrmx_path, str(docx_path)))
-                    docx_job_meta.append((idx, stem, out_dir))
+                    docx_job_meta.append((idx, stem, pdf_out_dir))
                 elif pdf_available:
-                    tmp_dir = out_dir / '.tmp_docx'
+                    # 仅导出 PDF：docx 写到临时目录，PDF 写到 pdf_out_dir
+                    tmp_dir = base_dir / '.tmp_docx'
                     tmp_dirs.add(tmp_dir)
                     tmp_dir.mkdir(parents=True, exist_ok=True)
                     tmp_docx = tmp_dir / (stem + '.docx')
                     docx_job_args.append((lrmx_path, str(tmp_docx)))
-                    docx_job_meta.append((idx, stem, out_dir))
+                    docx_job_meta.append((idx, stem, pdf_out_dir))
                 else:
                     succeeded[idx] = True
 
@@ -103,12 +110,12 @@ class _Worker(QThread):
                 if err:
                     self.log.emit(f'✗ {stem}: {err} {n}')
                 else:
-                    idx, _, out_dir = output_to_meta[output_path]
+                    idx, _, pdf_out_dir = output_to_meta[output_path]
                     succeeded[idx] = True
                     if self.do_docx:
                         self.log.emit(f'✓ {stem} → docx 完成 {n}')
                     if pdf_available:
-                        pdf_jobs.append((Path(output_path), out_dir))
+                        pdf_jobs.append((Path(output_path), pdf_out_dir))
 
             DocxExporter.export_parallel(
                 docx_job_args, template_bytes, cell_size, on_progress=_on_docx
@@ -178,23 +185,21 @@ class ConvertTab(QWidget):
         self._chk_docx.setChecked(True)
         self._chk_pdf = QCheckBox('pdf')
         self._chk_pdf.setChecked(False)
-        self._chk_pdf.toggled.connect(self._on_pdf_toggled)
         self._chk_sibling = QCheckBox('输出到任免表同级目录')
         self._chk_sibling.setChecked(False)
         self._chk_sibling.toggled.connect(self._on_sibling_toggled)
+        self._chk_own_dir = QCheckBox('为输出文件类型创建目录')
+        self._chk_own_dir.setChecked(True)
         fmt_row.addWidget(fmt_label)
         fmt_row.addWidget(self._chk_docx)
         fmt_row.addSpacing(16)
         fmt_row.addWidget(self._chk_pdf)
         fmt_row.addSpacing(16)
         fmt_row.addWidget(self._chk_sibling)
+        fmt_row.addSpacing(16)
+        fmt_row.addWidget(self._chk_own_dir)
         fmt_row.addStretch()
         bot_layout.addLayout(fmt_row)
-
-        self._pdf_hint = QLabel()
-        self._pdf_hint.setObjectName('pdfHint')
-        self._pdf_hint.setVisible(False)
-        bot_layout.addWidget(self._pdf_hint)
 
         # ── 输出目录 ───────────────────────────────────────────────────────────
         dir_row = QHBoxLayout()
@@ -293,11 +298,6 @@ class ConvertTab(QWidget):
         self._rule_combo.setVisible(not checked)
         self._custom_edit.setVisible(checked)
 
-    def _on_pdf_toggled(self, checked: bool):
-        if checked:
-            self._pdf_hint.setText('将使用 Spire.Doc Free 转换（注意：免费版超过3页会加水印）')
-        self._pdf_hint.setVisible(checked)
-
     def _on_sibling_toggled(self, checked: bool):
         self._dir_edit.setEnabled(not checked)
         self._dir_btn.setEnabled(not checked)
@@ -375,6 +375,7 @@ class ConvertTab(QWidget):
         self._worker = _Worker(
             files=files,
             output_dir=output_dir,
+            sub_dir=self._chk_own_dir.isChecked(),
             naming_rule=naming_rule,
             do_docx=self._chk_docx.isChecked(),
             do_pdf=self._chk_pdf.isChecked(),
