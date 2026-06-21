@@ -1,5 +1,6 @@
 import re
 import openpyxl
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -35,6 +36,17 @@ def fmt_birth(raw: str) -> str:
         year, month = raw[:4], raw[4:]
         return f'{year}.{int(month):02d}'
     return raw
+
+
+def birth_with_age(birth_ym: str) -> str:
+    """'1965.10' → '1965.10\\n（61岁）' using current year."""
+    if not birth_ym:
+        return birth_ym
+    m = re.match(r'(\d{4})', birth_ym)
+    if not m:
+        return birth_ym
+    age = date.today().year - int(m.group(1))
+    return f'{birth_ym}\n（{age}岁）'
 
 
 def normalize_birth(value: str) -> str:
@@ -156,7 +168,8 @@ class ExcelExporter:
             if update_only and is_member:
                 continue  # preserve manually-edited family data
 
-            ws = wb[sh] if sh in wb.sheetnames else wb.active
+            ws   = wb[sh] if sh in wb.sheetnames else wb.active
+            cell = ws[coord]
 
             if is_member:
                 prefix, attr = field.split('.', 1)
@@ -170,20 +183,25 @@ class ExcelExporter:
                     member = None
 
                 if member and attr == 'ChuShengNianYue':
-                    value = fmt_birth(member.get('ChuShengRiQi', ''))
+                    cell.value = fmt_birth(member.get('ChuShengRiQi', '')) or None
                 elif member:
-                    value = member.get(attr, '')
+                    cell.value = member.get(attr, '') or None
                 else:
-                    value = ''
+                    cell.value = None  # truly empty — ISBLANK() returns True
             else:
                 if field == 'ChuShengNianYue':
-                    value = birth_ym
-                    if update_only and fix_birth:
-                        value = normalize_birth(value)
+                    bym = normalize_birth(birth_ym) if (update_only and fix_birth) else birth_ym
+                    cell.value = birth_with_age(bym)
+                    # enable text wrap so the age line displays correctly
+                    from openpyxl.styles import Alignment
+                    existing = cell.alignment
+                    cell.alignment = Alignment(
+                        wrap_text=True,
+                        horizontal=existing.horizontal,
+                        vertical=existing.vertical,
+                    )
                 else:
-                    value = lrmx_dict.get(field, '')
-
-            ws[coord] = value
+                    cell.value = lrmx_dict.get(field, '') or None
 
         save_path.parent.mkdir(parents=True, exist_ok=True)
         wb.save(save_path)
