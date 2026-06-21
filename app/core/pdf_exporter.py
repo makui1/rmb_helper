@@ -59,26 +59,16 @@ def _spire_pdf_worker(args: tuple[str, str]) -> str:
     args = (docx_path_str, output_dir_str)
     返回生成的 pdf_path_str。
     必须是模块级函数，否则无法被 multiprocessing pickle。
-    IO_SharingViolation 是 Spire 并发写文件冲突，最多重试 3 次。
     """
-    import time
     docx_path_str, output_dir_str = args
     from spire.doc import Document, FileFormat
     from pathlib import Path as _Path
     pdf_path = _Path(output_dir_str) / (_Path(docx_path_str).stem + '.pdf')
-    last_err: Exception | None = None
-    for attempt in range(3):
-        try:
-            doc = Document()
-            doc.LoadFromFile(docx_path_str)
-            doc.SaveToFile(str(pdf_path), FileFormat.PDF)
-            doc.Close()
-            return str(pdf_path)
-        except Exception as e:
-            last_err = e
-            if attempt < 2:
-                time.sleep(0.5 * (attempt + 1))
-    raise last_err  # type: ignore[misc]
+    doc = Document()
+    doc.LoadFromFile(docx_path_str)
+    doc.SaveToFile(str(pdf_path), FileFormat.PDF)
+    doc.Close()
+    return str(pdf_path)
 
 
 class PdfExporter:
@@ -173,8 +163,7 @@ class PdfExporter:
         if not jobs:
             return
         import os
-        # Spire.Doc 在高并发时会触发 IO_SharingViolation，上限设为 4
-        n = min(4, os.cpu_count() or 1, len(jobs))
+        n = min(os.cpu_count() or 1, len(jobs))
         str_jobs = [(str(d), str(o)) for d, o in jobs]
         with ProcessPoolExecutor(max_workers=n) as executor:
             future_to_stem = {
