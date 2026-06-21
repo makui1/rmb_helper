@@ -177,6 +177,9 @@ class MainWindow(QMainWindow):
         self._title_bar: _TitleBar | None = None
         self._file_panel: LrmxFilePanel | None = None
         self._resize_cursor_set: bool = False
+        self._sidebar_collapsed: bool = False
+        self._sidebar_full_width: int = 190
+        self._sidebar_collapsed_width: int = 64
         self._build_ui()
         self._settings = QSettings('rmb_helper', 'rmb_helper')
         geom = self._settings.value('window/geometry')
@@ -373,10 +376,13 @@ class MainWindow(QMainWindow):
 
     def toggle_sidebar(self):
         if self._sidebar_container:
-            visible = self._sidebar_container.isVisible()
-            self._sidebar_container.setVisible(not visible)
+            self._sidebar_collapsed = not self._sidebar_collapsed
+            width = self._sidebar_collapsed_width if self._sidebar_collapsed else self._sidebar_full_width
+            self._sidebar_container.setFixedWidth(width)
+            for btn in self._nav_btns:
+                btn.setText('' if self._sidebar_collapsed else btn.property('btnLabel'))
             if self._title_bar:
-                self._title_bar.set_collapsed(visible)
+                self._title_bar.set_collapsed(self._sidebar_collapsed)
 
     def _make_nav_btn(self, label: str, icon: str | None = None) -> QPushButton:
         idx = len(self._nav_btns) if hasattr(self, '_nav_btns') else 0
@@ -384,9 +390,11 @@ class MainWindow(QMainWindow):
         btn.setObjectName('navBtn')
         btn.setCheckable(True)
         btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.setToolTip(label)
         if icon:
             btn.setIcon(QIcon(str(_ASSETS / icon)))
             btn.setIconSize(QSize(16, 16))
+        btn.setProperty('btnLabel', label)
         btn.clicked.connect(lambda _, i=idx: self._switch_tab(i))
         return btn
 
