@@ -306,9 +306,10 @@ class LrmxFilePanel(QWidget):
         return self._list.count()
 
     def add_file(self, path: str, _emit: bool = True):
-        if path in self._path_set:
+        canonical = str(Path(path).resolve()).lower()
+        if canonical in self._path_set:
             return
-        self._path_set.add(path)
+        self._path_set.add(canonical)
         item = QListWidgetItem(Path(path).name)
         item.setData(Qt.ItemDataRole.UserRole, path)
         item.setSizeHint(QSize(0, 34))
@@ -328,7 +329,7 @@ class LrmxFilePanel(QWidget):
         self.files_changed.emit(fs)
 
     def _on_path_removed(self, path: str):
-        self._path_set.discard(path)
+        self._path_set.discard(str(Path(path).resolve()).lower())
         for i in range(self._list.count()):
             if self._list.item(i).data(Qt.ItemDataRole.UserRole) == path:
                 self._list.takeItem(i)
@@ -337,7 +338,7 @@ class LrmxFilePanel(QWidget):
 
     def _remove_selected(self):
         for item in self._list.selectedItems():
-            self._path_set.discard(item.data(Qt.ItemDataRole.UserRole))
+            self._path_set.discard(str(Path(item.data(Qt.ItemDataRole.UserRole)).resolve()).lower())
             self._list.takeItem(self._list.row(item))
         self._emit_changed()
 
