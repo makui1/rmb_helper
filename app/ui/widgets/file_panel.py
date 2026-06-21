@@ -333,18 +333,18 @@ class LrmxFilePanel(QWidget):
             if self._list.item(i).data(Qt.ItemDataRole.UserRole) == path:
                 self._list.takeItem(i)
                 break
-        self.files_changed.emit(self.files())
+        self._emit_changed()
 
     def _remove_selected(self):
         for item in self._list.selectedItems():
             self._path_set.discard(item.data(Qt.ItemDataRole.UserRole))
             self._list.takeItem(self._list.row(item))
-        self.files_changed.emit(self.files())
+        self._emit_changed()
 
     def _clear_files(self):
         self._path_set.clear()
         self._list.clear()
-        self.files_changed.emit(self.files())
+        self._emit_changed()
 
     def _pick_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
