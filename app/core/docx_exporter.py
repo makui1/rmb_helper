@@ -54,7 +54,7 @@ _JIANLI_FONT_TIERS: list[tuple[int, float]] = [
 ]
 
 _PT_PER_EMU = 12700      # 1 pt = 12700 EMU
-_CELL_MARGIN_PT = 5.4    # Word default cell left/right inner margin ≈ 1.9 mm each side
+_CELL_MARGIN_PT = 0    # Word default cell left/right inner margin ≈ 1.9 mm each side
 _MIN_FONT_PT = 8.0       # never shrink below 8 pt
 
 _EMPTY_MEMBER: dict[str, str] = {
@@ -431,6 +431,56 @@ class DocxExporter:
                             changed |= _shrink_para_by_1pt(para)
         return changed
 
+    # ── 新增：获取简历单元格高度（EMU） ──────────────────────────────────────────
+
+    def _get_cell_height_emu(self, cell) -> int:
+        """
+        返回 cell 所在行（含 vMerge 合并行）的累计高度（EMU）。
+        未设置固定高度时返回 0。
+        """
+        tc = cell._tc
+        tr = tc.getparent()  # <w:tr>
+        tbl = tr.getparent()  # <w:tbl>
+        trs = tbl.findall(f'{{{_W}}}tr')
+
+        # 确定 cell 在哪一列（grid col）
+        grid_col = _grid_col_of(tr, tc)
+
+        # 找到 vMerge restart 所在行（向上找 restart 行）
+        start_tr = tr
+        tr_idx = trs.index(tr)
+        for i in range(tr_idx, -1, -1):
+            candidate_tc = _tc_at_grid_col(trs[i], grid_col)
+            if candidate_tc is None:
+                break
+            tc_pr = candidate_tc.find(f'{{{_W}}}tcPr')
+            if tc_pr is None:
+                start_tr = trs[i]
+                break
+            vm = tc_pr.find(f'{{{_W}}}vMerge')
+            if vm is None:
+                # 非合并单元格，就是起点
+                start_tr = trs[i]
+                break
+            if vm.get(f'{{{_W}}}val', '') == 'restart':
+                start_tr = trs[i]
+                break
+
+        # 从 restart 行开始向下累加高度
+        start_idx = trs.index(start_tr)
+        total_h = _tr_height_emu(start_tr)
+        for next_tr in trs[start_idx + 1:]:
+            next_tc = _tc_at_grid_col(next_tr, grid_col)
+            if next_tc is None:
+                break
+            next_pr = next_tc.find(f'{{{_W}}}tcPr')
+            next_vm = next_pr.find(f'{{{_W}}}vMerge') if next_pr is not None else None
+            if next_vm is not None and next_vm.get(f'{{{_W}}}val', '') != 'restart':
+                total_h += _tr_height_emu(next_tr)
+            else:
+                break
+        return total_h
+
     def _estimate_jianli_visual_lines(self, cell_width_emu: int, font_pt: float) -> int:
         """估算简历单元格视觉行数。
 
@@ -447,27 +497,31 @@ class DocxExporter:
             return self._jianli_line_count
 
         total = 0
-        for line in self._jianli_lines:
+        for idx, line in enumerate(self._jianli_lines):
             # tab 后面才是正文内容；tab 前的日期部分占据悬挂缩进区域
             content = line.split('\t', 1)[1] if '\t' in line else line
             content_w = _text_width_pt(content, font_pt)
-            total += max(1, math.ceil(content_w / avail_pt))
+            content_line_count = max(1, math.ceil(content_w / avail_pt))
+            print(f"第{idx}行，预计行数：{content_line_count}")
+            total += content_line_count
         return total
 
     def _shrink_jianli_cell(self, doc) -> bool:
-        """Apply font/spacing to JianLi cell based on estimated visual line count.
-
-        Finds the JianLi cell first to get its width, then estimates visual lines
-        at the first-tier font (14pt) as a reference, looks up _JIANLI_FONT_TIERS,
-        and applies the target font/spacing.
-        """
         from docx.shared import Pt
         from docx.enum.text import WD_LINE_SPACING
-        # ── 第一步：找到简历单元格，获取宽度 ──────────────────────────────────
-        jianli_cells: list = []
+        from typing import NamedTuple
+
+        class _CellInfo(NamedTuple):
+            cell: object
+            width_emu: int
+            height_pt: float
+
+        # ── 第一步：找到简历单元格，同时取宽度和高度 ──────────────────────────────
+        jianli_cells: list[_CellInfo] = []
         seen: set[int] = set()
         for table in doc.tables:
             for row in table.rows:
+                row_h_pt = (row.height / _PT_PER_EMU) if row.height else 0.0
                 for cell in row.cells:
                     if not any(_JIANLI_RENDERED.search(p.text) for p in cell.paragraphs):
                         continue
@@ -475,47 +529,68 @@ class DocxExporter:
                     if cid in seen:
                         continue
                     seen.add(cid)
-                    jianli_cells.append(cell)
+                    jianli_cells.append(_CellInfo(
+                        cell=cell,
+                        width_emu=cell.width or 0,
+                        height_pt=row_h_pt,
+                    ))
 
         if not jianli_cells:
             return False
 
-        # ── 第二步：用第一档字号估算视觉行数，确定目标字号 ────────────────────
-        ref_font_pt = _JIANLI_FONT_TIERS[0][1]   # 14pt，基准字号
-        cell_w = jianli_cells[0].width or 0
-        if cell_w:
-            vis = self._estimate_jianli_visual_lines(cell_w, ref_font_pt)
+        cell_w = jianli_cells[0].width_emu
+        cell_h_pt = jianli_cells[0].height_pt
+
+        # ── 第二步：枚举字号，求满足 f(x)*(x+1) <= cell_h_pt 的最大 x ────────────
+        max_font_pt = _JIANLI_FONT_TIERS[0][1]
+        candidates = [
+            round(max_font_pt - 0.5 * i, 1)
+            for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
+        ]
+
+        target_pt = _MIN_FONT_PT
+        target_spacing_pt = _MIN_FONT_PT + 1.0
+
+        if cell_w and cell_h_pt:
+            for font_pt in candidates:
+                spacing_pt = font_pt + 1.0
+                vis = self._estimate_jianli_visual_lines(cell_w, font_pt)
+                if vis * spacing_pt <= cell_h_pt:
+                    target_pt = font_pt
+                    target_spacing_pt = spacing_pt
+                    print(
+                        f'[JianLi] 数据行={self._jianli_line_count}  字号={font_pt}pt'
+                        f'  行距={spacing_pt}pt  估算视觉行={vis}'
+                        f'  所需高度={vis * spacing_pt:.1f}pt  单元格高={cell_h_pt:.1f}pt  ✓'
+                    )
+                    break
+                print(
+                    f'[JianLi] 字号={font_pt}pt  行距={spacing_pt}pt'
+                    f'  估算视觉行={vis}  所需高度={vis * spacing_pt:.1f}pt > {cell_h_pt:.1f}pt  ✗'
+                )
         else:
-            vis = self._jianli_line_count          # 无宽度信息时退回数据行数
+            vis = self._jianli_line_count
+            for line_limit, font_pt in _JIANLI_FONT_TIERS:
+                if vis <= line_limit:
+                    target_pt = font_pt
+                    target_spacing_pt = font_pt + 1.0
+                    break
+            else:
+                target_pt = _JIANLI_FONT_TIERS[-1][1]
+                target_spacing_pt = target_pt + 1.0
 
-        target_pt = ref_font_pt
-        for line_limit, font_pt in _JIANLI_FONT_TIERS:
-            if vis <= line_limit:
-                target_pt = font_pt
-                break
-        else:
-            target_pt = _JIANLI_FONT_TIERS[-1][1]
-
-        print(
-            f'[JianLi] 数据行={self._jianli_line_count}  估算视觉行={vis}'
-            f'  字号={target_pt}pt  单元格宽={cell_w / _PT_PER_EMU:.1f}pt'
-        )
-
-        if target_pt >= ref_font_pt:
+        if target_pt >= max_font_pt:
             return False
 
-        # ── 第三步：应用字号与行距 ──────────────────────────────────────────────
-        line_spacing_pt = target_pt + 1.0
+        # ── 第三步：应用字号与行距 ────────────────────────────────────────────────
         changed = False
-        for cell in jianli_cells:
-            for para in cell.paragraphs:
+        for info in jianli_cells:
+            for para in info.cell.paragraphs:
                 if _shrink_para_by_1pt(para, target_pt=target_pt):
                     changed = True
                     para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                    para.paragraph_format.line_spacing = Pt(line_spacing_pt)
-        return changed
-
-    # ── Photo ────────────────────────────────────────────────────────────────
+                    para.paragraph_format.line_spacing = Pt(target_spacing_pt)
+        return changed    # ── Photo ────────────────────────────────────────────────────────────────
 
     @staticmethod
     def probe_cell_size(template_bytes: bytes) -> tuple[int, int]:
