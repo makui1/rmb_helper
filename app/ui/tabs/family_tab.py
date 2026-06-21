@@ -60,8 +60,23 @@ class _FamilyWorker(QThread):
                     ok += 1
                     self.log.emit(f'✓ {label}（新建）')
                 elif status == 'updated':
+                    if self.fix_birth and 'ChuShengNianYue' in self.naming_rule:
+                        naming_d = dict(d)
+                        naming_d['ChuShengNianYue'] = fmt_birth(naming_d.get('ChuShengNianYue', ''))
+                        new_stem = apply_rule(self.naming_rule, naming_d)
+                        new_path = self.output_dir / f'{new_stem}.xlsx'
+                        if new_path != output_path:
+                            try:
+                                output_path.rename(new_path)
+                                label = new_stem
+                                self.log.emit(f'✓ {label}（更新并重命名）')
+                            except Exception as e:
+                                self.log.emit(f'⚠ {label}（更新成功，重命名失败：{e}）')
+                        else:
+                            self.log.emit(f'✓ {label}（更新）')
+                    else:
+                        self.log.emit(f'✓ {label}（更新）')
                     ok += 1
-                    self.log.emit(f'✓ {label}（更新）')
                 elif status == 'skip':
                     skip += 1
                     self.log.emit(f'△ {label}（已跳过）')
