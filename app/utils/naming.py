@@ -19,11 +19,21 @@ def clean_field(value: str) -> str:
 
 
 def apply_rule(template: str, fields: dict[str, str]) -> str:
+    empty: list[str] = []
+
     def replace(m: re.Match) -> str:
         key = m.group(1)
-        raw = fields.get(key, f'{{{key}}}')
-        return clean_field(raw)
+        if key not in fields:
+            return f'{{{key}}}'
+        val = clean_field(fields[key])
+        if not val:
+            empty.append(key)
+        return val
 
     result = FIELD_PATTERN.sub(replace, template)
+    if empty:
+        raise ValueError(f'字段值为空：{", ".join(empty)}')
     result = ILLEGAL_CHARS.sub('_', result)
-    return result or '未命名'
+    if not result:
+        raise ValueError('命名结果为空')
+    return result

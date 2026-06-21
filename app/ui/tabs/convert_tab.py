@@ -152,6 +152,9 @@ class _Worker(QThread):
                     d    = lf.as_dict()
                     name = clean_field(d.get('XingMing', ''))
                     sfz  = clean_field(d.get('ShenFenZheng', ''))
+                    empty = [f for f, v in [('XingMing', name), ('ShenFenZheng', sfz)] if not v]
+                    if empty:
+                        raise ValueError(f'字段值为空：{", ".join(empty)}')
                     dest_name = f'{name}{sfz}.lrmx'
                     shutil.copy2(lrmx_path, collect_dir / dest_name)
                     self.log.emit(f'✓ 归集：{dest_name}')
