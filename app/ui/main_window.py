@@ -81,6 +81,7 @@ class _TitleBar(QWidget):
         self._toggle_btn = QPushButton()
         self._toggle_btn.setIcon(QIcon(str(_ASSETS / 'collapse.svg')))
         self._toggle_btn.setIconSize(QSize(20, 20))
+        self._toggle_btn.setToolTip("折叠导航栏")
         self._toggle_btn.setObjectName('winBtn')
         self._toggle_btn.setFixedSize(32, 26)
         self._toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -154,6 +155,7 @@ class _TitleBar(QWidget):
     def set_collapsed(self, collapsed: bool):
         icon_file = 'unfold.svg' if collapsed else 'collapse.svg'
         self._toggle_btn.setIcon(QIcon(str(_ASSETS / icon_file)))
+        self._toggle_btn.setToolTip("展开导航栏" if collapsed else "折叠导航栏")
 
     def set_maximized(self, is_max: bool):
         icon_file = 'unmaximize.svg' if is_max else 'maximize.svg'
