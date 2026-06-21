@@ -1,8 +1,20 @@
 import re
 import openpyxl
 from pathlib import Path
+import sys
 
-_TEMPLATE = Path(__file__).parent.parent / 'resources' / 'family_template.xlsx'
+
+def get_template_path() -> Path:
+    """返回内置模板路径，开发环境和 PyInstaller 打包后均适用。"""
+    if hasattr(sys, '_MEIPASS'):
+        p = Path(sys._MEIPASS) / 'resources' / 'family_template.xlsx'
+    else:
+        p = Path(__file__).parent.parent / 'resources' / 'family_template.xlsx'
+    if not p.exists():
+        raise FileNotFoundError(
+            f'找不到内置模板文件，请将 family_template.xlsx 放至：{p}'
+        )
+    return p
 
 SPECIAL_CHENGWEI = {
     '父亲', '母亲',
@@ -17,15 +29,32 @@ _BIRTH_YM_RE    = re.compile(r'\d{4}\.\d{1,2}')
 
 
 def fmt_birth(raw: str) -> str:
-    """'196811' → '1968.11'  (strip leading zero in month)"""
+    """'196811' → '1968.11' (ensure month is 2-digit)"""
     raw = (raw or '').strip()
     if re.fullmatch(r'\d{6}', raw):
-        return f'{raw[:4]}.{int(raw[4:])}'
+        year, month = raw[:4], raw[4:]
+        return f'{year}.{int(month):02d}'
     return raw
 
 
+def normalize_birth(value: str) -> str:
+    """Normalize birth date to yyyy.MM format.
+    Handles both '196811' (raw) and '1956.4' (malformed) → '1968.11' / '1956.04'
+    """
+    value = (value or '').strip()
+    if not value:
+        return ''
+    if re.fullmatch(r'\d{6}', value):
+        return fmt_birth(value)
+    m = re.match(r'(\d{4})\.(\d{1,2})', value)
+    if m:
+        year, month = m.group(1), m.group(2)
+        return f'{year}.{int(month):02d}'
+    return value
+
+
 class ExcelExporter:
-    def __init__(self, template_path: Path = _TEMPLATE):
+    def __init__(self, template_path: Path = get_template_path()):
         self._template = template_path
         # {(sheet_title, coordinate): field_name}
         self._field_map: dict[tuple[str, str], str] = {}
@@ -54,7 +83,9 @@ class ExcelExporter:
         wb.close()
 
     def scan_output_dir(self, output_dir: Path) -> dict[tuple[str, str], Path]:
-        """Return {(name, birth_ym): path} for existing xlsx in output_dir."""
+        """Return {(name, birth_ym): path} for existing xlsx in output_dir.
+        Normalizes birth dates to yyyy.MM format.
+        """
         result: dict[tuple[str, str], Path] = {}
         if not output_dir.is_dir():
             return result
@@ -72,8 +103,7 @@ class ExcelExporter:
                     ws = wb[sh] if sh in wb.sheetnames else wb.active
                     v  = ws[coord].value
                     raw = str(v) if v else ''
-                    hit = _BIRTH_YM_RE.search(raw)
-                    birth = hit.group(0) if hit else ''
+                    birth = normalize_birth(raw)
                 wb.close()
                 if name and birth:
                     result[(name, birth)] = p
@@ -88,8 +118,12 @@ class ExcelExporter:
         output_path:  Path,
         existing_map: dict[tuple[str, str], Path],
         on_exists:    str = 'skip',
+        fix_birth:    bool = False,
     ) -> tuple[str, str]:
         """Export to xlsx.
+
+        Args:
+            fix_birth: If True and updating, also rewrite ChuShengNianYue to standard format
 
         Returns (status, stem):
           'created' — new file written
@@ -144,6 +178,8 @@ class ExcelExporter:
             else:
                 if field == 'ChuShengNianYue':
                     value = birth_ym
+                    if update_only and fix_birth:
+                        value = normalize_birth(value)
                 else:
                     value = lrmx_dict.get(field, '')
 

@@ -3,12 +3,12 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QLineEdit, QComboBox, QTextEdit,
-    QFileDialog, QFrame, QProgressBar,
+    QFileDialog, QFrame, QProgressBar, QCheckBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize
 from PySide6.QtGui import QIcon, QDragEnterEvent, QDropEvent
 
-from app.core.excel_exporter import ExcelExporter, fmt_birth
+from app.core.excel_exporter import ExcelExporter, fmt_birth, normalize_birth
 from app.core.lrmx import LrmxFile
 from app.utils.naming import PRESETS, apply_rule
 from app.ui.widgets.file_panel import LrmxFilePanel
@@ -24,13 +24,14 @@ class _FamilyWorker(QThread):
     progress = Signal(int)
     finished = Signal(int, int, int, int)  # ok, skip, error, total
 
-    def __init__(self, files, output_dir, naming_rule, on_exists, exporter):
+    def __init__(self, files, output_dir, naming_rule, on_exists, exporter, fix_birth=False):
         super().__init__()
         self.files       = files
         self.output_dir  = Path(output_dir)
         self.naming_rule = naming_rule
         self.on_exists   = on_exists
         self.exporter    = exporter
+        self.fix_birth   = fix_birth
 
     def run(self):
         total = len(self.files)
@@ -52,7 +53,7 @@ class _FamilyWorker(QThread):
                 output_path = self.output_dir / f'{stem}.xlsx'
 
                 status, label = self.exporter.export(
-                    d, members, output_path, existing_map, self.on_exists
+                    d, members, output_path, existing_map, self.on_exists, self.fix_birth
                 )
 
                 if status == 'created':
@@ -152,6 +153,10 @@ class FamilyTab(QWidget):
         exists_row.addWidget(exists_lbl)
         exists_row.addWidget(self._exists_combo, 1)
         layout.addLayout(exists_row)
+
+        self._chk_fix_birth = QCheckBox('修正已有关系表出生年月为标准格式 (yyyy.MM)')
+        self._chk_fix_birth.setChecked(False)
+        layout.addWidget(self._chk_fix_birth)
 
         # ── 开始按钮 ──────────────────────────────────────────────────────────
         run_row = QHBoxLayout()
@@ -272,6 +277,7 @@ class FamilyTab(QWidget):
             naming_rule = self._rule_combo.currentData(),
             on_exists   = self._exists_combo.currentData(),
             exporter    = exporter,
+            fix_birth   = self._chk_fix_birth.isChecked(),
         )
         self._progress.setRange(0, len(files))
         self._progress.setValue(0)
