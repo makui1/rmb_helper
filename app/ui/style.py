@@ -218,8 +218,7 @@ QFrame#fileListContainer {{
     background-color: transparent;
 }}
 QLabel#fileCountLabel {{
-    color: #888880;
-    font-size: 12px;
+    font-size: 14px;
     background: transparent;
 }}
 QListWidget#fileList {{

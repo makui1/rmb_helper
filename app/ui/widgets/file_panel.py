@@ -256,6 +256,7 @@ class LrmxFilePanel(QWidget):
         self._count_label = QLabel('')
         self._count_label.setObjectName('fileCountLabel')
         self._count_label.setContentsMargins(10, 5, 10, 5)
+        self._count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._count_label.setVisible(False)
         c_layout.addWidget(self._count_label)
 
