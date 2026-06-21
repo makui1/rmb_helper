@@ -502,7 +502,6 @@ class DocxExporter:
             content = line.split('\t', 1)[1] if '\t' in line else line
             content_w = _text_width_pt(content, font_pt)
             content_line_count = max(1, math.ceil(content_w / avail_pt))
-            print(f"第{idx}行，预计行数：{content_line_count}")
             total += content_line_count
         return total
 
