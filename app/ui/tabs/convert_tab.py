@@ -12,7 +12,7 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 from app.core.lrmx import LrmxFile
 from app.core.docx_exporter import DocxExporter, get_template_path
 from app.core.pdf_exporter import PdfExporter
-from app.utils.naming import apply_rule, PRESETS
+from app.utils.naming import apply_rule, clean_field, PRESETS
 from app.ui.widgets.file_panel import LrmxFilePanel
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
@@ -150,8 +150,8 @@ class _Worker(QThread):
                 try:
                     lf   = LrmxFile(Path(lrmx_path))
                     d    = lf.as_dict()
-                    name = d.get('XingMing', '').strip()
-                    sfz  = d.get('ShenFenZheng', '').strip()
+                    name = clean_field(d.get('XingMing', ''))
+                    sfz  = clean_field(d.get('ShenFenZheng', ''))
                     dest_name = f'{name}{sfz}.lrmx'
                     shutil.copy2(lrmx_path, collect_dir / dest_name)
                     self.log.emit(f'✓ 归集：{dest_name}')
