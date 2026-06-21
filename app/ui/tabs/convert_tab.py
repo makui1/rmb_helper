@@ -24,7 +24,7 @@ class _Worker(QThread):
     progress = Signal(int)              # current step
 
     def __init__(self, files, output_dir, sub_dir, naming_rule, do_docx, do_pdf,
-                 sibling_dir=False):
+                 sibling_dir=False, collect_lrmx=False):
         super().__init__()
         self.files = files
         self.output_dir = Path(output_dir) if output_dir else None
@@ -33,6 +33,7 @@ class _Worker(QThread):
         self.do_docx = do_docx
         self.do_pdf = do_pdf
         self.sibling_dir = sibling_dir
+        self.collect_lrmx = collect_lrmx
 
     def run(self):
         start = time.monotonic()
@@ -141,6 +142,22 @@ class _Worker(QThread):
         for tmp_dir in tmp_dirs:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+        # ── 归集任免表 ───────────────────────────────────────────────
+        if self.collect_lrmx and self.output_dir:
+            collect_dir = self.output_dir / '任免审批表'
+            collect_dir.mkdir(parents=True, exist_ok=True)
+            for lrmx_path in self.files:
+                try:
+                    lf   = LrmxFile(Path(lrmx_path))
+                    d    = lf.as_dict()
+                    name = d.get('XingMing', '').strip()
+                    sfz  = d.get('ShenFenZheng', '').strip()
+                    dest_name = f'{name}{sfz}.lrmx'
+                    shutil.copy2(lrmx_path, collect_dir / dest_name)
+                    self.log.emit(f'✓ 归集：{dest_name}')
+                except Exception as e:
+                    self.log.emit(f'✗ 归集失败 {Path(lrmx_path).name}：{e}')
+
         done = sum(succeeded)
         self.finished.emit(done, total, time.monotonic() - start)
 
@@ -190,6 +207,9 @@ class ConvertTab(QWidget):
         self._chk_sibling.toggled.connect(self._on_sibling_toggled)
         self._chk_own_dir = QCheckBox('为输出文件类型创建目录')
         self._chk_own_dir.setChecked(True)
+        self._chk_collect = QCheckBox('归集任免表')
+        self._chk_collect.setChecked(False)
+        self._chk_collect.setToolTip('将文件列表中的 lrmx 文件复制到输出目录下的【任免审批表】子文件夹，命名为{姓名}{身份证号}.lrmx')
         fmt_row.addWidget(fmt_label)
         fmt_row.addWidget(self._chk_docx)
         fmt_row.addSpacing(16)
@@ -198,6 +218,8 @@ class ConvertTab(QWidget):
         fmt_row.addWidget(self._chk_sibling)
         fmt_row.addSpacing(16)
         fmt_row.addWidget(self._chk_own_dir)
+        fmt_row.addSpacing(16)
+        fmt_row.addWidget(self._chk_collect)
         fmt_row.addStretch()
         bot_layout.addLayout(fmt_row)
 
@@ -301,6 +323,9 @@ class ConvertTab(QWidget):
     def _on_sibling_toggled(self, checked: bool):
         self._dir_edit.setEnabled(not checked)
         self._dir_btn.setEnabled(not checked)
+        if checked:
+            self._chk_collect.setChecked(False)
+        self._chk_collect.setEnabled(not checked)
 
     # ── drag & drop (tab-level, delegates to panel) ───────────────────────────
 
@@ -380,6 +405,7 @@ class ConvertTab(QWidget):
             do_docx=self._chk_docx.isChecked(),
             do_pdf=self._chk_pdf.isChecked(),
             sibling_dir=sibling,
+            collect_lrmx=self._chk_collect.isChecked(),
         )
         total_steps = len(files) * (2 if self._chk_pdf.isChecked() else 1)
         self._progress.setRange(0, total_steps)
