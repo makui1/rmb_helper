@@ -101,13 +101,14 @@ QToolTip {{
 }}
 
 /* ── 输入框 ─────────────────────────────────────────────────────────── */
-QLineEdit, QTextEdit {{
+QLineEdit, QTextEdit, QPlainTextEdit {{
     border: 0.5px solid #D0CEC8;
     border-radius: 6px;
     padding: 4px 8px;
     background-color: #FFFFFF;
     color: #1A1A1A;
-    selection-background-color: {ACCENT_LIGHT};
+    selection-background-color: #3B82F6;
+    selection-color: #ffffff;
 }}
 QLineEdit:focus, QTextEdit:focus {{
     border-color: {ACCENT};
@@ -482,5 +483,9 @@ QFrame#resultSep {{
 QScrollArea#resultScroll {{
     border: none;
     background: transparent;
+}}
+QComboBox QAbstractItemView::item:selected {{
+    background: #3B82F6;
+    color: #ffffff;
 }}
 """
