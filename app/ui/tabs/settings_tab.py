@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import QSettings, Qt
 from app.utils.naming import PRESETS
 from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
+from app.core import file_assoc
 
 
 class SettingsTab(QWidget):
@@ -84,7 +85,53 @@ class SettingsTab(QWidget):
         save_btn.setObjectName('primary')
         save_btn.clicked.connect(self._save)
         layout.addWidget(save_btn)
+
+        # 文件关联（仅 Windows）
+        if file_assoc.supported():
+            assoc_sep = QFrame()
+            assoc_sep.setFrameShape(QFrame.Shape.HLine)
+            layout.addWidget(assoc_sep)
+
+            assoc_label = QLabel('文件关联')
+            assoc_label.setObjectName('sectionTitle')
+            layout.addWidget(assoc_label)
+
+            assoc_sub = QLabel('关联后，在资源管理器中双击 .lrmx 文件即可用本工具打开。仅影响当前用户，无需管理员权限。')
+            assoc_sub.setStyleSheet('color: #888880; font-size: 12px;')
+            assoc_sub.setWordWrap(True)
+            layout.addWidget(assoc_sub)
+
+            assoc_row = QHBoxLayout()
+            self._assoc_btn = QPushButton()
+            self._assoc_btn.clicked.connect(self._toggle_assoc)
+            assoc_row.addWidget(self._assoc_btn)
+            assoc_row.addStretch()
+            layout.addLayout(assoc_row)
+            self._refresh_assoc_btn()
+
         layout.addStretch()
+
+    def _refresh_assoc_btn(self):
+        registered = file_assoc.is_registered()
+        self._assoc_btn.setText('取消关联 .lrmx 文件' if registered else '关联 .lrmx 文件')
+        self._assoc_btn.setObjectName('' if registered else 'primary')
+        # 切换 objectName 后需 unpolish/polish 才能刷新外观
+        self._assoc_btn.style().unpolish(self._assoc_btn)
+        self._assoc_btn.style().polish(self._assoc_btn)
+
+    def _toggle_assoc(self):
+        try:
+            if file_assoc.is_registered():
+                file_assoc.unregister()
+                QMessageBox.information(self, '已取消关联', '已取消 .lrmx 文件关联。')
+            else:
+                file_assoc.register()
+                QMessageBox.information(
+                    self, '关联成功',
+                    '已关联 .lrmx 文件。\n现在双击 .lrmx 文件即可用本工具打开。')
+        except Exception as e:
+            QMessageBox.critical(self, '操作失败', f'修改文件关联失败：\n{e}')
+        self._refresh_assoc_btn()
 
     def _add_rule(self):
         text, ok = QInputDialog.getText(

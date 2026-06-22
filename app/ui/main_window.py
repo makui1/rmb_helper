@@ -168,7 +168,7 @@ class _TitleBar(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, open_path: str | None = None):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
         self.resize(1250, 700)
@@ -189,6 +189,15 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geom)
         if sys.platform != 'win32':
             QApplication.instance().installEventFilter(self)
+        if open_path:
+            self.open_lrmx(open_path)
+
+    def open_lrmx(self, path: str):
+        """切换到任免表编辑器 Tab 并打开指定 lrmx 文件。"""
+        self._switch_tab(4)
+        editor = self._tab_widgets.get(4)
+        if editor is not None and hasattr(editor, 'open_path'):
+            editor.open_path(path)
 
     def _build_ui(self):
         root_widget = QWidget()

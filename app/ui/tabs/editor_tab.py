@@ -404,6 +404,11 @@ class EditorTab(QWidget):
 
     # ── file operations ──────────────────────────────────────────────────────
 
+    def open_path(self, path: str) -> None:
+        """外部调用（如双击关联文件）：加入文件树并加载。"""
+        self._tree.add_path(path)
+        self._on_file_selected(path)
+
     def _on_file_selected(self, path: str) -> None:
         if self._dirty:
             ret = QMessageBox.question(
