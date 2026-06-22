@@ -839,7 +839,7 @@ class EditorTab(QWidget):
         bar.setFixedHeight(36)
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(10, 4, 10, 4)
-        lay.setSpacing(8)
+        lay.setSpacing(6)
 
         self._path_lbl = QLabel('未打开文件')
         self._path_lbl.setStyleSheet('color: #888; font-size: 11px;')
@@ -852,26 +852,72 @@ class EditorTab(QWidget):
                 b.setToolTip(tooltip)
             return b
 
+        def _sep() -> QFrame:
+            f = QFrame()
+            f.setFrameShape(QFrame.Shape.VLine)
+            f.setFrameShadow(QFrame.Shadow.Sunken)
+            f.setFixedHeight(18)
+            f.setStyleSheet('color: #D0CEC8;')
+            return f
+
         self._open_btn   = _btn('打开', '打开 lrmx 文件（可多选）')
-        self._close_btn  = _btn('关闭', '关闭当前标签页')
+
         self._save_btn   = _btn('保存', '保存当前文件')
         self._save_btn.setObjectName('primary')
-        self._saveas_btn = _btn('另存为…')
-        self._export_btn = _btn('导出 PDF')
-        self._print_btn  = _btn('打印')
+        self._saveas_btn = _btn('另存为…', '另存为新文件')
+
+        self._export_btn = _btn('导出 PDF', '导出为 PDF 文件')
+        self._export_btn.setObjectName('secondary')
+        self._print_btn  = _btn('打印', '打印预览并打印')
+
+        self._close_btn  = _btn('关闭', '关闭当前标签页')
 
         self._open_btn.clicked.connect(self._on_open_btn)
-        self._close_btn.clicked.connect(lambda: self._close_tab(self._tabs.currentIndex()))
         self._save_btn.clicked.connect(self._on_save_btn)
         self._saveas_btn.clicked.connect(self._on_saveas_btn)
         self._export_btn.clicked.connect(self._on_export_pdf)
         self._print_btn.clicked.connect(self._on_print_btn)
+        self._close_btn.clicked.connect(lambda: self._close_tab(self._tabs.currentIndex()))
 
         lay.addWidget(self._open_btn)
-        for b in [self._close_btn, self._save_btn, self._saveas_btn,
-                  self._export_btn, self._print_btn]:
+        lay.addWidget(_sep())
+        lay.addWidget(self._save_btn)
+        lay.addWidget(self._saveas_btn)
+        lay.addWidget(_sep())
+        lay.addWidget(self._export_btn)
+        lay.addWidget(self._print_btn)
+        lay.addWidget(_sep())
+        lay.addWidget(self._close_btn)
+
+        for b in [self._save_btn, self._saveas_btn, self._export_btn,
+                  self._print_btn, self._close_btn]:
             b.setEnabled(False)
-            lay.addWidget(b)
+
+        # 布局切换分段控件
+        lay.addSpacing(10)
+        self._layout_b_btn = QPushButton('轻量')
+        self._layout_b_btn.setObjectName('layoutToggleL')
+        self._layout_b_btn.setFixedHeight(24)
+        self._layout_b_btn.setCheckable(True)
+        self._layout_b_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._layout_b_btn.setToolTip('轻量分隔式布局')
+        self._layout_b_btn.clicked.connect(lambda: self._on_layout_toggle('b'))
+
+        self._layout_a_btn = QPushButton('表格')
+        self._layout_a_btn.setObjectName('layoutToggleR')
+        self._layout_a_btn.setFixedHeight(24)
+        self._layout_a_btn.setCheckable(True)
+        self._layout_a_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._layout_a_btn.setToolTip('严格表格式布局')
+        self._layout_a_btn.clicked.connect(lambda: self._on_layout_toggle('a'))
+
+        current_mode = self._layout_mode()
+        self._layout_b_btn.setChecked(current_mode == 'b')
+        self._layout_a_btn.setChecked(current_mode == 'a')
+
+        lay.addWidget(self._layout_b_btn)
+        lay.addWidget(self._layout_a_btn)
+
         return bar
 
     # ── active pane ──────────────────────────────────────────────────────────
@@ -890,7 +936,24 @@ class EditorTab(QWidget):
         self._open_path(path)
 
     def set_layout_mode(self, mode: str) -> None:
-        """由 MainWindow 在设置变更后调用，重建已有标签页布局。"""
+        """切换布局模式，重建已有标签页，并同步工具栏切换按钮状态。"""
+        if hasattr(self, '_layout_b_btn'):
+            for btn, m in [(self._layout_b_btn, 'b'), (self._layout_a_btn, 'a')]:
+                btn.blockSignals(True)
+                btn.setChecked(m == mode)
+                btn.blockSignals(False)
+        for i in range(self._tabs.count()):
+            pane = self._tabs.widget(i)
+            if isinstance(pane, _DocPane):
+                pane.rebuild_layout(mode)
+
+    def _on_layout_toggle(self, mode: str) -> None:
+        """布局切换按钮点击处理：保证单选语义，存 QSettings，重建已开标签页。"""
+        for btn, m in [(self._layout_b_btn, 'b'), (self._layout_a_btn, 'a')]:
+            btn.blockSignals(True)
+            btn.setChecked(m == mode)
+            btn.blockSignals(False)
+        QSettings('rmb_helper', 'rmb_helper').setValue('editor/layout_mode', mode)
         for i in range(self._tabs.count()):
             pane = self._tabs.widget(i)
             if isinstance(pane, _DocPane):

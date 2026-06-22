@@ -456,7 +456,6 @@ class MainWindow(QMainWindow):
             else:
                 from app.ui.tabs.settings_tab import SettingsTab
                 tab = SettingsTab()
-                tab.layout_mode_changed.connect(self._on_layout_mode_changed)
             if hasattr(tab, 'busy_changed'):
                 tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
             self._stack.addWidget(tab)
@@ -490,11 +489,6 @@ class MainWindow(QMainWindow):
         elif prev == 4 and self._auto_collapsed_for_editor:
             self._auto_collapsed_for_editor = False
             self.toggle_sidebar()
-
-    def _on_layout_mode_changed(self, mode: str) -> None:
-        editor = self._tab_widgets.get(4)
-        if editor is not None and hasattr(editor, 'set_layout_mode'):
-            editor.set_layout_mode(mode)
 
     def closeEvent(self, event):
         # 只保存记忆下来的普通窗口几何（非编辑器、非最大化）
