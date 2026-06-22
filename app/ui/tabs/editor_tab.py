@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont, QFontMetricsF, QTextBlockFormat, QTextCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QComboBox, QTextEdit,
@@ -76,6 +77,48 @@ def _sep() -> QFrame:
     line.setFrameShadow(QFrame.Shadow.Sunken)
     line.setStyleSheet('color: #ddd;')
     return line
+
+
+class _ResumeEdit(QTextEdit):
+    """简历编辑框：自动换行 + 18 字符悬挂缩进（折行后从第 19 字符起对齐）。
+
+    字体与 QSS#resumeEdit 一致（NSimSun 等宽，半角 13px）。悬挂缩进通过
+    块格式实现：首行缩进 = -18 字符宽，左边距 = 18 字符宽 → 首行从 0 起，
+    折行从第 19 个字符位置起。
+    """
+    _INDENT_CHARS = 18
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName('resumeEdit')
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self._apply_indent()
+
+    def _indent_px(self) -> float:
+        f = QFont()
+        f.setFamilies(['NSimSun', 'SimSun', 'Consolas'])
+        f.setPixelSize(13)
+        # 半角字符宽度 ×18（简历日期前缀为 18 个半角字符）
+        return self._INDENT_CHARS * QFontMetricsF(f).horizontalAdvance('0')
+
+    def _apply_indent(self):
+        indent = self._indent_px()
+        fmt = QTextBlockFormat()
+        fmt.setLeftMargin(indent)
+        fmt.setTextIndent(-indent)
+        cur = QTextCursor(self.document())
+        cur.select(QTextCursor.SelectionType.Document)
+        was = self.blockSignals(True)
+        cur.mergeBlockFormat(fmt)
+        self.blockSignals(was)
+
+    def setPlainText(self, text: str) -> None:
+        super().setPlainText(text)
+        self._apply_indent()
+
+    def clear(self) -> None:
+        super().clear()
+        self._apply_indent()
 
 
 class EditorTab(QWidget):
@@ -241,11 +284,11 @@ class EditorTab(QWidget):
         info_grid.addWidget(self._shu_xi, 4, 5)
 
         # row 5: 政治面貌（自由文本，全宽）
-        self._zheng_zhi = _line()
-        info_grid.addWidget(_lbl('政治面貌', _LW2), 5, 0)
-        info_grid.addWidget(self._zheng_zhi, 5, 1, 1, 5)
-
-        left_lay.addLayout(info_grid)
+        # self._zheng_zhi = _line()
+        # info_grid.addWidget(_lbl('政治面貌', _LW2), 5, 0)
+        # info_grid.addWidget(self._zheng_zhi, 5, 1, 1, 5)
+        #
+        # left_lay.addLayout(info_grid)
 
         # 学历学位 section
         left_lay.addWidget(_section_label('学历学位'))
@@ -307,11 +350,9 @@ class EditorTab(QWidget):
         # 简历（等宽字体，使空白字符与有效字符宽度一致，保证缩进对齐）
         # 字体通过 QSS#resumeEdit 设置——QSS 的 font-family 优先级高于 setFont()
         left_lay.addWidget(_section_label('简历'))
-        self._jian_li = QTextEdit()
-        self._jian_li.setObjectName('resumeEdit')
+        self._jian_li = _ResumeEdit()
         self._jian_li.setMinimumHeight(200)
         self._jian_li.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._jian_li.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         left_lay.addWidget(self._jian_li, 1)
 
         # Ignored 水平策略：忽略各自的 sizeHint/最小宽度差异，纯按 stretch 平分
@@ -384,7 +425,7 @@ class EditorTab(QWidget):
     def _connect_dirty(self):
         """连接所有控件的变化信号到 _mark_dirty。"""
         for w in [self._xing_ming, self._chu_sheng, self._ji_guan, self._chu_di,
-                  self._ru_dang, self._can_jia, self._shu_xi, self._zheng_zhi,
+                  self._ru_dang, self._can_jia, self._shu_xi,
                   self._xian_ren, self._ni_ren, self._ni_mian,
                   self._qrz_xueli_yuan, self._qrz_xuewei_yuan,
                   self._zzj_xueli_yuan, self._zzj_xuewei_yuan,
@@ -449,7 +490,7 @@ class EditorTab(QWidget):
             self._set_combo(self._jian_kang, d.get('JianKangZhuangKuang', ''))
             self._set_combo(self._zhuan_ye, d.get('ZhuanYeJiShuZhiWu', ''))
             self._shu_xi.setText(d.get('ShuXiZhuanYeYouHeZhuanChang', ''))
-            self._zheng_zhi.setText(d.get('ZhengZhiMianMao', ''))
+            # self._zheng_zhi.setText(d.get('ZhengZhiMianMao', ''))
 
             self._set_combo(self._qrz_xueli,  d.get('QuanRiZhiJiaoYu_XueLi', ''))
             self._set_combo(self._qrz_xuewei, d.get('QuanRiZhiJiaoYu_XueWei', ''))
@@ -509,7 +550,7 @@ class EditorTab(QWidget):
         try:
             for w in [self._xing_ming, self._chu_sheng, self._ji_guan, self._chu_di,
                       self._ru_dang, self._can_jia, self._dao_ling, self._shu_xi,
-                      self._zheng_zhi, self._xian_ren, self._ni_ren, self._ni_mian,
+                      self._xian_ren, self._ni_ren, self._ni_mian,
                       self._qrz_xueli_yuan, self._qrz_xuewei_yuan,
                       self._zzj_xueli_yuan, self._zzj_xuewei_yuan,
                       self._cheng_bao, self._shen_fen, self._ji_suan,
@@ -559,7 +600,7 @@ class EditorTab(QWidget):
         lrmx.set('JianKangZhuangKuang', self._jian_kang.currentText())
         lrmx.set('ZhuanYeJiShuZhiWu', self._zhuan_ye.currentText())
         lrmx.set('ShuXiZhuanYeYouHeZhuanChang', self._shu_xi.text())
-        lrmx.set('ZhengZhiMianMao', self._zheng_zhi.text())
+        # lrmx.set('ZhengZhiMianMao', self._zheng_zhi.text())
 
         lrmx.set('QuanRiZhiJiaoYu_XueLi', self._qrz_xueli.currentText())
         lrmx.set('QuanRiZhiJiaoYu_XueWei', self._qrz_xuewei.currentText())
