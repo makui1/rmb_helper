@@ -182,11 +182,14 @@ class MainWindow(QMainWindow):
         self._sidebar_collapsed: bool = False
         self._sidebar_full_width: int = 190
         self._sidebar_collapsed_width: int = 64
-        self._build_ui()
+        self._resizable: bool = True        # 编辑器 Tab 下禁止手动缩放
+        self._current_index: int = 0
         self._settings = QSettings('rmb_helper', 'rmb_helper')
-        geom = self._settings.value('window/geometry')
-        if geom:
-            self.restoreGeometry(geom)
+        # 仅记忆「普通 Tab、非最大化」的窗口几何；编辑器尺寸与最大化状态不记忆
+        self._normal_geometry = self._settings.value('window/geometry')
+        self._build_ui()
+        if self._normal_geometry:
+            self.restoreGeometry(self._normal_geometry)
         if sys.platform != 'win32':
             QApplication.instance().installEventFilter(self)
         if open_path:
@@ -299,6 +302,19 @@ class MainWindow(QMainWindow):
             self._title_bar.set_maximized(self.isMaximized())
         super().changeEvent(event)
 
+    def _maybe_remember_geometry(self):
+        """仅在普通 Tab、非最大化、窗口可见时记录几何，供下次启动恢复。"""
+        if self._current_index != 4 and not self.isMaximized() and self.isVisible():
+            self._normal_geometry = self.saveGeometry()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._maybe_remember_geometry()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._maybe_remember_geometry()
+
     def nativeEvent(self, event_type, message):
         if sys.platform == 'win32':
             import ctypes
@@ -310,7 +326,7 @@ class MainWindow(QMainWindow):
                 local = self.mapFromGlobal(QPoint(sx, sy))
                 x, y, w, h, m = local.x(), local.y(), self.width(), self.height(), 8
 
-                if not self.isMaximized():
+                if self._resizable and not self.isMaximized():
                     if x < m and y < m:        return True, _HTTOPLEFT
                     if x > w-m and y < m:      return True, _HTTOPRIGHT
                     if x < m and y > h-m:      return True, _HTBOTTOMLEFT
@@ -363,6 +379,9 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, watched, event):
         t = event.type()
+        if not self._resizable:
+            self._clear_resize_cursor()
+            return False
         if t == QEvent.Type.MouseMove:
             local = self.mapFromGlobal(event.globalPosition().toPoint())
             if not self.isMaximized() and self.rect().contains(local):
@@ -446,12 +465,24 @@ class MainWindow(QMainWindow):
         if self._file_panel:
             widget = self._tab_widgets[index]
             self._file_panel.setVisible(getattr(widget, 'USES_FILE_PANEL', False))
-        # 编辑器 tab 需要更大的最小窗口尺寸
+
+        # 窗口尺寸约束：先更新 _current_index，使随后 setMinimumSize 触发的
+        # resizeEvent 能正确判断是否记忆几何
+        prev = self._current_index
+        self._current_index = index
         if index == 4:
+            # 编辑器 Tab：放大窗口、禁止手动缩放（仍可最大化/最小化）
+            self._resizable = False
             self.setMinimumSize(1400, 1000)
         else:
+            self._resizable = True
             self.setMinimumSize(800, 500)
+            # 从编辑器返回普通 Tab 时，恢复进入编辑器前的普通窗口尺寸
+            if prev == 4 and not self.isMaximized() and self._normal_geometry:
+                self.restoreGeometry(self._normal_geometry)
 
     def closeEvent(self, event):
-        self._settings.setValue('window/geometry', self.saveGeometry())
+        # 只保存记忆下来的普通窗口几何（非编辑器、非最大化）
+        if self._normal_geometry:
+            self._settings.setValue('window/geometry', self._normal_geometry)
         super().closeEvent(event)

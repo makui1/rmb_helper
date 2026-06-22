@@ -1,184 +1,180 @@
 import base64
-from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QPushButton, QLabel,
-    QDialog, QFileDialog, QHBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QDialog, QFileDialog, QPushButton, QSlider,
 )
-from PySide6.QtCore import Qt, Signal, QRect, QPoint, QBuffer, QByteArray, QIODevice
+from PySide6.QtCore import (
+    Qt, Signal, QRect, QPoint, QPointF, QBuffer, QByteArray, QIODevice,
+)
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
 
 _PHOTO_W = 120
-_PHOTO_H = 150  # 4:5 display size
-_HANDLE  = 8
-_CORNER_Z = 14  # hit zone radius for corner handles
+_PHOTO_H = 150  # 4:5 预览尺寸
+
+
+class _ClickLabel(QLabel):
+    """可点击的照片框。"""
+    clicked = Signal()
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(ev)
 
 
 class _CropCanvas(QWidget):
-    """在缩小显示的图片上拖动/调整 4:5 裁剪框。"""
+    """固定居中的 4:5 裁剪框，图片可在框后缩放/平移。"""
+
+    zoom_changed = Signal(float)
 
     def __init__(self, pixmap: QPixmap, parent=None):
         super().__init__(parent)
         self._orig = pixmap
-        self._scale = 1.0
-        self._img_off = QPoint(0, 0)
-        self._crop = QRect()
-        self._drag_mode = ''          # '' | 'move' | 'tl' | 'tr' | 'bl' | 'br'
-        self._drag_anchor = QPoint()
-        self._drag_crop0 = QRect()
-        self.setMouseTracking(True)
-        self.setMinimumSize(420, 520)
+        self._zoom = 1.0
+        self._offset = QPointF(0, 0)   # 图片左上角在画布中的坐标
+        self._frame = QRect()
+        self._dragging = False
+        self._last = QPoint()
+        self.setMinimumSize(440, 560)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    # ── 布局/换算 ────────────────────────────────────────────────────────────
 
     def resizeEvent(self, ev):
-        self._fit()
+        self._frame = self._frame_rect()
+        self._recenter()
         super().resizeEvent(ev)
 
-    def _fit(self):
-        iw, ih = self._orig.width(), self._orig.height()
-        sw, sh = self.width() - 24, self.height() - 24
-        s = min(sw / max(iw, 1), sh / max(ih, 1))
-        self._scale = s
-        dw, dh = int(iw * s), int(ih * s)
-        self._img_off = QPoint((self.width() - dw) // 2, (self.height() - dh) // 2)
-        if not self._crop.isValid():
-            cw = dw
-            ch = int(cw * 5 / 4)
-            if ch > dh:
-                ch = dh
-                cw = int(ch * 4 / 5)
-            cx = self._img_off.x() + (dw - cw) // 2
-            cy = self._img_off.y() + (dh - ch) // 2
-            self._crop = QRect(cx, cy, cw, ch)
+    def _frame_rect(self) -> QRect:
+        m = 30
+        aw = max(self.width() - 2 * m, 10)
+        ah = max(self.height() - 2 * m, 10)
+        fw = aw
+        fh = int(fw * 5 / 4)
+        if fh > ah:
+            fh = ah
+            fw = int(fh * 4 / 5)
+        return QRect((self.width() - fw) // 2, (self.height() - fh) // 2, fw, fh)
 
-    def _img_rect(self) -> QRect:
-        iw, ih = self._orig.width(), self._orig.height()
-        return QRect(self._img_off.x(), self._img_off.y(),
-                     int(iw * self._scale), int(ih * self._scale))
+    def _base_scale(self) -> float:
+        if self._orig.width() == 0 or self._orig.height() == 0:
+            return 1.0
+        # 让图片至少铺满裁剪框
+        return max(self._frame.width() / self._orig.width(),
+                   self._frame.height() / self._orig.height())
+
+    def _scale(self) -> float:
+        return self._base_scale() * self._zoom
+
+    def _recenter(self):
+        s = self._scale()
+        iw = self._orig.width() * s
+        ih = self._orig.height() * s
+        fc = self._frame.center()
+        self._offset = QPointF(fc.x() - iw / 2, fc.y() - ih / 2)
+        self._clamp()
+
+    def _clamp(self):
+        """保证图片始终覆盖裁剪框（不留空白）。"""
+        s = self._scale()
+        iw = self._orig.width() * s
+        ih = self._orig.height() * s
+        fr = self._frame
+        x, y = self._offset.x(), self._offset.y()
+        x = min(x, fr.left())
+        y = min(y, fr.top())
+        if x + iw < fr.right():
+            x = fr.right() - iw
+        if y + ih < fr.bottom():
+            y = fr.bottom() - ih
+        self._offset = QPointF(x, y)
+
+    # ── 缩放 ─────────────────────────────────────────────────────────────────
+
+    def zoom(self) -> float:
+        return self._zoom
+
+    def set_zoom(self, z: float):
+        z = max(1.0, min(z, 6.0))
+        if abs(z - self._zoom) < 1e-4:
+            return
+        fc = self._frame.center()
+        s0 = self._scale()
+        # 裁剪框中心对应的原图坐标，缩放后保持不变
+        px = (fc.x() - self._offset.x()) / s0
+        py = (fc.y() - self._offset.y()) / s0
+        self._zoom = z
+        s1 = self._scale()
+        self._offset = QPointF(fc.x() - px * s1, fc.y() - py * s1)
+        self._clamp()
+        self.update()
+        self.zoom_changed.emit(self._zoom)
+
+    def wheelEvent(self, ev):
+        self.set_zoom(self._zoom * (1.0015 ** ev.angleDelta().y()))
+
+    # ── 拖动平移 ─────────────────────────────────────────────────────────────
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._last = ev.position().toPoint()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseMoveEvent(self, ev):
+        if self._dragging:
+            p = ev.position().toPoint()
+            d = p - self._last
+            self._last = p
+            self._offset = QPointF(self._offset.x() + d.x(), self._offset.y() + d.y())
+            self._clamp()
+            self.update()
+
+    def mouseReleaseEvent(self, _ev):
+        self._dragging = False
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+    # ── 绘制 ─────────────────────────────────────────────────────────────────
 
     def paintEvent(self, _ev):
         p = QPainter(self)
-        ir = self._img_rect()
-        scaled = self._orig.scaled(ir.width(), ir.height(),
-                                   Qt.AspectRatioMode.IgnoreAspectRatio,
-                                   Qt.TransformationMode.SmoothTransformation)
-        p.drawPixmap(ir.topLeft(), scaled)
+        p.fillRect(self.rect(), QColor('#2B2B2B'))
+        s = self._scale()
+        target = QRect(int(self._offset.x()), int(self._offset.y()),
+                       int(self._orig.width() * s), int(self._orig.height() * s))
+        p.drawPixmap(target, self._orig)
 
+        fr = self._frame
         p.setOpacity(0.55)
-        cr = self._crop
-        # four dark rectangles outside the crop
-        p.fillRect(ir.left(), ir.top(), ir.width(), cr.top() - ir.top(), QColor(0, 0, 0))
-        p.fillRect(ir.left(), cr.bottom() + 1, ir.width(), ir.bottom() - cr.bottom(), QColor(0, 0, 0))
-        p.fillRect(ir.left(), cr.top(), cr.left() - ir.left(), cr.height(), QColor(0, 0, 0))
-        p.fillRect(cr.right() + 1, cr.top(), ir.right() - cr.right(), cr.height(), QColor(0, 0, 0))
+        p.fillRect(QRect(0, 0, self.width(), fr.top()), QColor(0, 0, 0))
+        p.fillRect(QRect(0, fr.bottom() + 1, self.width(),
+                         self.height() - fr.bottom() - 1), QColor(0, 0, 0))
+        p.fillRect(QRect(0, fr.top(), fr.left(), fr.height()), QColor(0, 0, 0))
+        p.fillRect(QRect(fr.right() + 1, fr.top(),
+                         self.width() - fr.right() - 1, fr.height()), QColor(0, 0, 0))
         p.setOpacity(1.0)
-
         p.setPen(QPen(QColor('#D85A30'), 2))
-        p.drawRect(cr)
-
-        h = _HANDLE
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor('#D85A30'))
-        for cx, cy in [(cr.left(), cr.top()), (cr.right(), cr.top()),
-                       (cr.left(), cr.bottom()), (cr.right(), cr.bottom())]:
-            p.drawRect(cx - h // 2, cy - h // 2, h, h)
+        p.drawRect(fr)
         p.end()
 
-    def _corner_hit(self, pos: QPoint) -> str:
-        z = _CORNER_Z
-        r = self._crop
-        corners = {'tl': (r.left(), r.top()), 'tr': (r.right(), r.top()),
-                   'bl': (r.left(), r.bottom()), 'br': (r.right(), r.bottom())}
-        for name, (cx, cy) in corners.items():
-            if abs(pos.x() - cx) <= z and abs(pos.y() - cy) <= z:
-                return name
-        return ''
-
-    def mousePressEvent(self, ev):
-        if ev.button() != Qt.MouseButton.LeftButton:
-            return
-        pos = ev.position().toPoint()
-        c = self._corner_hit(pos)
-        if c:
-            self._drag_mode = c
-        elif self._crop.contains(pos):
-            self._drag_mode = 'move'
-        else:
-            return
-        self._drag_anchor = pos
-        self._drag_crop0 = QRect(self._crop)
-
-    def mouseMoveEvent(self, ev):
-        pos = ev.position().toPoint()
-        if not self._drag_mode:
-            c = self._corner_hit(pos)
-            if c in ('tl', 'br'):
-                self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-            elif c in ('tr', 'bl'):
-                self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-            elif self._crop.contains(pos):
-                self.setCursor(Qt.CursorShape.SizeAllCursor)
-            else:
-                self.unsetCursor()
-            return
-
-        ir = self._img_rect()
-        dx = pos.x() - self._drag_anchor.x()
-        dy = pos.y() - self._drag_anchor.y()
-        r = QRect(self._drag_crop0)
-
-        if self._drag_mode == 'move':
-            r = r.translated(dx, dy)
-            if r.left() < ir.left():     r.moveLeft(ir.left())
-            if r.top() < ir.top():       r.moveTop(ir.top())
-            if r.right() > ir.right():   r.moveRight(ir.right())
-            if r.bottom() > ir.bottom(): r.moveBottom(ir.bottom())
-        else:
-            m = self._drag_mode
-            if m == 'br':
-                nw = max(40, r.width() + dx)
-                nh = int(nw * 5 / 4)
-                if r.top() + nh > ir.bottom(): nh = ir.bottom() - r.top(); nw = int(nh * 4 / 5)
-                r.setRight(r.left() + nw); r.setBottom(r.top() + nh)
-            elif m == 'bl':
-                nw = max(40, r.width() - dx)
-                nh = int(nw * 5 / 4)
-                if r.top() + nh > ir.bottom(): nh = ir.bottom() - r.top(); nw = int(nh * 4 / 5)
-                r.setLeft(r.right() - nw); r.setBottom(r.top() + nh)
-            elif m == 'tr':
-                nw = max(40, r.width() + dx)
-                nh = int(nw * 5 / 4)
-                if r.bottom() - nh < ir.top(): nh = r.bottom() - ir.top(); nw = int(nh * 4 / 5)
-                r.setRight(r.left() + nw); r.setTop(r.bottom() - nh)
-            elif m == 'tl':
-                nw = max(40, r.width() - dx)
-                nh = int(nw * 5 / 4)
-                if r.bottom() - nh < ir.top(): nh = r.bottom() - ir.top(); nw = int(nh * 4 / 5)
-                r.setLeft(r.right() - nw); r.setTop(r.bottom() - nh)
-            if r.left() < ir.left():     r.moveLeft(ir.left())
-            if r.top() < ir.top():       r.moveTop(ir.top())
-            if r.right() > ir.right():   r.setRight(ir.right())
-            if r.bottom() > ir.bottom(): r.setBottom(ir.bottom())
-
-        if r.width() >= 20 and r.height() >= 25:
-            self._crop = r
-        self.update()
-
-    def mouseReleaseEvent(self, _ev):
-        self._drag_mode = ''
-
     def crop_in_orig(self) -> QRect:
-        """将裁剪框换算回原图坐标。"""
-        r = self._crop
-        ox, oy, s = self._img_off.x(), self._img_off.y(), self._scale
-        return QRect(int((r.left() - ox) / s), int((r.top() - oy) / s),
-                     int(r.width() / s), int(r.height() / s))
+        s = self._scale()
+        fr = self._frame
+        rect = QRect(
+            round((fr.left() - self._offset.x()) / s),
+            round((fr.top() - self._offset.y()) / s),
+            round(fr.width() / s),
+            round(fr.height() / s),
+        )
+        return rect.intersected(self._orig.rect())
 
 
 class CropDialog(QDialog):
     def __init__(self, pixmap: QPixmap, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('裁剪照片（4:5 比例）')
-        self.setMinimumSize(500, 640)
+        self.setWindowTitle('调整照片（4:5）')
+        self.setMinimumSize(520, 680)
         self._pixmap = pixmap
         self._result: QPixmap | None = None
 
@@ -186,7 +182,27 @@ class CropDialog(QDialog):
         self._canvas = _CropCanvas(pixmap)
         lay.addWidget(self._canvas, 1)
 
-        hint = QLabel('拖动裁剪框移动位置；拖动四角调整大小（自动保持 4:5）')
+        # ── 缩放控制 ───────────────────────────────────────────────────────
+        zoom_row = QHBoxLayout()
+        zoom_row.addWidget(QLabel('缩放'))
+        minus = QPushButton('－')
+        minus.setFixedWidth(32)
+        minus.clicked.connect(lambda: self._canvas.set_zoom(self._canvas.zoom() - 0.2))
+        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider.setRange(100, 600)   # 1.0x – 6.0x
+        self._slider.setValue(100)
+        self._slider.valueChanged.connect(lambda v: self._canvas.set_zoom(v / 100))
+        plus = QPushButton('＋')
+        plus.setFixedWidth(32)
+        plus.clicked.connect(lambda: self._canvas.set_zoom(self._canvas.zoom() + 0.2))
+        self._canvas.zoom_changed.connect(
+            lambda z: self._slider.setValue(int(round(z * 100))))
+        zoom_row.addWidget(minus)
+        zoom_row.addWidget(self._slider, 1)
+        zoom_row.addWidget(plus)
+        lay.addLayout(zoom_row)
+
+        hint = QLabel('滚轮或拖动滑块缩放，拖动照片平移；橙色框内为最终 4:5 区域')
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet('color: #888; font-size: 11px;')
         lay.addWidget(hint)
@@ -195,8 +211,8 @@ class CropDialog(QDialog):
         btns.addStretch()
         cancel = QPushButton('取消')
         cancel.clicked.connect(self.reject)
-        ok = QPushButton('确认裁剪')
-        ok.setObjectName('primaryBtn')
+        ok = QPushButton('确认')
+        ok.setObjectName('primary')
         ok.clicked.connect(self._confirm)
         btns.addWidget(cancel)
         btns.addWidget(ok)
@@ -204,7 +220,8 @@ class CropDialog(QDialog):
 
     def _confirm(self):
         rect = self._canvas.crop_in_orig()
-        self._result = self._pixmap.copy(rect)
+        if rect.isValid() and rect.width() > 0 and rect.height() > 0:
+            self._result = self._pixmap.copy(rect)
         self.accept()
 
     def cropped(self) -> QPixmap | None:
@@ -212,7 +229,7 @@ class CropDialog(QDialog):
 
 
 class PhotoWidget(QWidget):
-    """照片预览 + 更换按钮。changed 信号发出新的 base64 字符串。"""
+    """照片预览，点击照片框即可更换。changed 信号发出新的 base64 字符串。"""
 
     changed = Signal(str)
 
@@ -226,17 +243,17 @@ class PhotoWidget(QWidget):
         lay.setContentsMargins(4, 4, 4, 4)
         lay.setSpacing(4)
 
-        self._label = QLabel()
+        self._label = _ClickLabel()
         self._label.setFixedSize(_PHOTO_W, _PHOTO_H)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label.setStyleSheet('border: 1px solid #ccc; background: #f0efe9;')
-        self._label.setText('暂无\n照片')
+        self._label.setStyleSheet('border: 1px solid #ccc; background: #f0efe9; color: #999;')
+        self._label.setText('点击\n上传照片')
+        self._label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._label.setToolTip('点击更换照片')
+        self._label.clicked.connect(self._pick)
         lay.addWidget(self._label, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        btn = QPushButton('更换照片')
-        btn.setFixedHeight(24)
-        btn.clicked.connect(self._pick)
-        lay.addWidget(btn)
+    # ── public API ───────────────────────────────────────────────────────────
 
     def set_b64(self, b64: str) -> None:
         self._b64 = b64
@@ -244,17 +261,20 @@ class PhotoWidget(QWidget):
             self._show(b64)
         else:
             self._label.setPixmap(QPixmap())
-            self._label.setText('暂无\n照片')
+            self._label.setText('点击\n上传照片')
 
     def b64(self) -> str:
         return self._b64
+
+    # ── internals ──────────────────────────────────────────────────────────────
 
     def _show(self, b64: str) -> None:
         try:
             pm = QPixmap()
             pm.loadFromData(base64.b64decode(b64))
             if not pm.isNull():
-                self._label.setPixmap(pm.scaled(_PHOTO_W, _PHOTO_H,
+                self._label.setPixmap(pm.scaled(
+                    _PHOTO_W, _PHOTO_H,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation))
                 self._label.setText('')
@@ -273,29 +293,28 @@ class PhotoWidget(QWidget):
         pm = QPixmap(path)
         if pm.isNull():
             return
-        # Check 4:5 ratio
-        w, h = pm.width(), pm.height()
-        if abs(w * 5 - h * 4) > max(w, h) * 0.02:
-            dlg = CropDialog(pm, self)
-            if dlg.exec() != QDialog.DialogCode.Accepted:
-                return
-            pm = dlg.cropped()
-            if pm is None:
-                return
 
-        ba = QByteArray()
-        buf = QBuffer(ba)
-        buf.open(QIODevice.OpenModeFlag.WriteOnly)
-        pm.toImage().save(buf, 'JPEG', 85)
-        buf.close()
-        if len(ba) > 5 * 1024 * 1024:
-            ba = QByteArray()
-            buf = QBuffer(ba)
-            buf.open(QIODevice.OpenModeFlag.WriteOnly)
-            pm.toImage().save(buf, 'JPEG', 55)
-            buf.close()
+        dlg = CropDialog(pm, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        result = dlg.cropped()
+        if result is None or result.isNull():
+            return
+
+        ba = self._encode(result, 85)
+        if len(ba) > 5 * 1024 * 1024:   # 超过 5MB 再压一档
+            ba = self._encode(result, 55)
 
         b64 = base64.b64encode(bytes(ba)).decode()
         self._b64 = b64
         self._show(b64)
         self.changed.emit(b64)
+
+    @staticmethod
+    def _encode(pm: QPixmap, quality: int) -> QByteArray:
+        ba = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        pm.toImage().save(buf, 'JPEG', quality)
+        buf.close()
+        return ba
