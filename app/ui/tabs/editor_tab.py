@@ -180,26 +180,25 @@ class _DocPane(QWidget):
     # ── 布局（两种，可运行时切换）────────────────────────────────────────────
 
     def _install_layout(self, mode: str):
-        """拆除旧布局并安装新布局。"""
-        old = self.layout()
-        if old is not None:
-            while old.count():
-                item = old.takeAt(0)
-                w = item.widget()
-                if w:
-                    w.setParent(None)  # type: ignore[arg-type]
-            import shiboken6
-            if shiboken6.isValid(old):
-                old.deleteLater()
-
-        if mode == 'a':
-            self._build_layout_a()
-        else:
-            self._build_layout_b()
+        """保留根布局永久不变，只替换内部的滚动子组件，避免白屏。"""
+        root = self.layout()
+        if root is None:
+            root = QVBoxLayout(self)
+            root.setContentsMargins(0, 0, 0, 0)
+            root.setSpacing(0)
+        while root.count():
+            item = root.takeAt(0)
+            w = item.widget()
+            if w:
+                w.hide()
+                w.setParent(None)  # type: ignore[arg-type]
+                w.deleteLater()
+        scroll = self._build_layout_a() if mode == 'a' else self._build_layout_b()
+        root.addWidget(scroll)
         self._layout_mode = mode
 
-    def _build_layout_b(self):
-        """轻量分隔式布局（双栏滚动表单）。"""
+    def _build_layout_b(self) -> QScrollArea:
+        """轻量分隔式布局：单栏，简历风格，各节从上到下依次排列。"""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -207,26 +206,23 @@ class _DocPane(QWidget):
 
         container = QWidget()
         container.setObjectName('editorForm')
-        outer = QHBoxLayout(container)
-        outer.setContentsMargins(12, 10, 12, 10)
-        outer.setSpacing(12)
+        col = QVBoxLayout(container)
+        col.setContentsMargins(16, 12, 16, 12)
+        col.setSpacing(8)
 
-        # ── 左栏 ─────────────────────────────────────────────────────────
-        left = QWidget()
-        left_lay = QVBoxLayout(left)
-        left_lay.setContentsMargins(0, 0, 0, 0)
-        left_lay.setSpacing(6)
+        # ── 基本信息（照片在右侧）────────────────────────────────────────
+        col.addWidget(_section_label('基本信息'))
+        info_outer = QHBoxLayout()
+        info_outer.setSpacing(12)
+        info_outer.setContentsMargins(0, 0, 0, 0)
 
         info_grid = QGridLayout()
         info_grid.setHorizontalSpacing(6)
         info_grid.setVerticalSpacing(4)
         info_grid.setColumnStretch(1, 1)
         info_grid.setColumnStretch(3, 1)
-        info_grid.setColumnStretch(5, 1)
         info_grid.setColumnMinimumWidth(0, _LW2)
         info_grid.setColumnMinimumWidth(2, _LW2)
-        info_grid.setColumnMinimumWidth(4, _LW2)
-
         info_grid.addWidget(_lbl('姓名'), 0, 0)
         info_grid.addWidget(self._xing_ming, 0, 1)
         info_grid.addWidget(_lbl('性别'), 0, 2)
@@ -239,25 +235,24 @@ class _DocPane(QWidget):
         info_grid.addWidget(self._ji_guan, 2, 1)
         info_grid.addWidget(_lbl('出生地'), 2, 2)
         info_grid.addWidget(self._chu_di, 2, 3)
-        info_grid.addWidget(
-            self._photo, 0, 4, 3, 2,
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
-        )
         info_grid.addWidget(_lbl('入党时间'), 3, 0)
         info_grid.addWidget(self._ru_dang, 3, 1)
         info_grid.addWidget(_lbl('参工时间'), 3, 2)
         info_grid.addWidget(self._can_jia, 3, 3)
-        info_grid.addWidget(_lbl('到龄时间'), 3, 4)
-        info_grid.addWidget(self._dao_ling, 3, 5)
-        info_grid.addWidget(_lbl('健康状况'), 4, 0)
-        info_grid.addWidget(self._jian_kang, 4, 1)
-        info_grid.addWidget(_lbl('专技职务'), 4, 2)
-        info_grid.addWidget(self._zhuan_ye, 4, 3)
-        info_grid.addWidget(_lbl('熟悉专业'), 4, 4)
-        info_grid.addWidget(self._shu_xi, 4, 5)
-        left_lay.addLayout(info_grid)
+        info_grid.addWidget(_lbl('到龄时间'), 4, 0)
+        info_grid.addWidget(self._dao_ling, 4, 1, 1, 3)
+        info_grid.addWidget(_lbl('健康状况'), 5, 0)
+        info_grid.addWidget(self._jian_kang, 5, 1)
+        info_grid.addWidget(_lbl('专技职务'), 5, 2)
+        info_grid.addWidget(self._zhuan_ye, 5, 3)
+        info_grid.addWidget(_lbl('熟悉专业'), 6, 0)
+        info_grid.addWidget(self._shu_xi, 6, 1, 1, 3)
+        info_outer.addLayout(info_grid, 1)
+        info_outer.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop)
+        col.addLayout(info_outer)
 
-        left_lay.addWidget(_section_label('学历学位'))
+        # ── 学历学位 ──────────────────────────────────────────────────────
+        col.addWidget(_section_label('学历学位'))
         edu_grid = QGridLayout()
         edu_grid.setHorizontalSpacing(6)
         edu_grid.setVerticalSpacing(4)
@@ -277,9 +272,10 @@ class _DocPane(QWidget):
             edu_grid.addWidget(combo_w, row, 2)
             edu_grid.addWidget(QLabel('毕业院校系及专业'), row, 3)
             edu_grid.addWidget(yuan_w, row, 4)
-        left_lay.addLayout(edu_grid)
+        col.addLayout(edu_grid)
 
-        left_lay.addWidget(_section_label('职务'))
+        # ── 职务 ──────────────────────────────────────────────────────────
+        col.addWidget(_section_label('职务'))
         pos_grid = QGridLayout()
         pos_grid.setHorizontalSpacing(6)
         pos_grid.setVerticalSpacing(4)
@@ -291,32 +287,35 @@ class _DocPane(QWidget):
         pos_grid.addWidget(self._ni_ren, 1, 1)
         pos_grid.addWidget(_lbl('拟免职务'), 2, 0)
         pos_grid.addWidget(self._ni_mian, 2, 1)
-        left_lay.addLayout(pos_grid)
+        col.addLayout(pos_grid)
 
-        left_lay.addWidget(_section_label('简历'))
-        left_lay.addWidget(self._jian_li, 1)
+        # ── 简历 ──────────────────────────────────────────────────────────
+        col.addWidget(_section_label('简历'))
+        col.addWidget(self._jian_li, 1)
 
-        left.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
-        outer.addWidget(left, 1)
+        # ── 奖惩 ──────────────────────────────────────────────────────────
+        col.addWidget(_section_label('奖惩情况'))
+        col.addWidget(self._jiang_cheng)
 
-        # ── 右栏 ─────────────────────────────────────────────────────────
-        right = QWidget()
-        right_lay = QVBoxLayout(right)
-        right_lay.setContentsMargins(0, 0, 0, 0)
-        right_lay.setSpacing(6)
-        right_lay.addWidget(_section_label('奖惩情况'))
-        right_lay.addWidget(self._jiang_cheng)
-        right_lay.addWidget(_section_label('年度考核结果'))
-        right_lay.addWidget(self._nian_du)
-        right_lay.addWidget(_section_label('任免理由'))
-        right_lay.addWidget(self._ren_mian)
-        right_lay.addWidget(_section_label('家庭主要成员'))
-        right_lay.addWidget(self._family, 1)
-        right_lay.addWidget(_section_label('底部信息'))
+        # ── 年核 ──────────────────────────────────────────────────────────
+        col.addWidget(_section_label('年度考核结果'))
+        col.addWidget(self._nian_du)
 
+        # ── 任免理由 ──────────────────────────────────────────────────────
+        col.addWidget(_section_label('任免理由'))
+        col.addWidget(self._ren_mian)
+
+        # ── 家庭 ──────────────────────────────────────────────────────────
+        col.addWidget(_section_label('家庭主要成员'))
+        col.addWidget(self._family, 1)
+
+        # ── 底部信息 ──────────────────────────────────────────────────────
+        col.addWidget(_section_label('底部信息'))
         bot_grid = QGridLayout()
         bot_grid.setHorizontalSpacing(6)
         bot_grid.setVerticalSpacing(4)
+        bot_grid.setColumnMinimumWidth(0, _LW2)
+        bot_grid.setColumnMinimumWidth(2, _LW2)
         bot_grid.setColumnStretch(1, 1)
         bot_grid.setColumnStretch(3, 1)
         bot_grid.addWidget(_lbl('呈报单位'), 0, 0)
@@ -331,18 +330,13 @@ class _DocPane(QWidget):
         bot_grid.addWidget(self._tian_biao_shi, 3, 1)
         bot_grid.addWidget(_lbl('填表人'), 3, 2)
         bot_grid.addWidget(self._tian_biao_ren, 3, 3)
-        right_lay.addLayout(bot_grid)
-
-        right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
-        outer.addWidget(right, 1)
+        col.addLayout(bot_grid)
 
         scroll.setWidget(container)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(scroll)
+        return scroll
 
-    def _build_layout_a(self):
-        """严格表格式布局：全格线，密度最高。"""
+    def _build_layout_a(self) -> QScrollArea:
+        """严格表格式布局：全格线，双栏，标签宽度固定不换行。"""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -350,15 +344,16 @@ class _DocPane(QWidget):
 
         container = QWidget()
         container.setObjectName('editorFormA')
-        grid = QGridLayout(container)
-        grid.setSpacing(0)
-        grid.setContentsMargins(0, 0, 0, 0)
+        outer = QHBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        def lbl_cell(text: str) -> QLabel:
+        def lbl_cell(text: str, min_w: int = _LW2) -> QLabel:
             w = QLabel(text)
             w.setObjectName('tableLbl')
             w.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             w.setContentsMargins(4, 2, 6, 2)
+            w.setMinimumWidth(min_w)
             return w
 
         def sec_cell(text: str) -> QLabel:
@@ -367,90 +362,139 @@ class _DocPane(QWidget):
             w.setContentsMargins(6, 2, 6, 2)
             return w
 
-        row = 0
+        # ── 左栏 ──────────────────────────────────────────────────────────
+        left = QWidget()
+        left_lay = QVBoxLayout(left)
+        left_lay.setContentsMargins(0, 0, 0, 0)
+        left_lay.setSpacing(0)
 
-        grid.addWidget(sec_cell('基本信息'), row, 0, 1, 8); row += 1
-        grid.addWidget(lbl_cell('姓名'), row, 0)
-        grid.addWidget(self._xing_ming, row, 1)
-        grid.addWidget(lbl_cell('性别'), row, 2)
-        grid.addWidget(self._xing_bie, row, 3)
-        grid.addWidget(self._photo, row, 4, 3, 4,
-                       Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        row += 1
-        grid.addWidget(lbl_cell('出生年月'), row, 0)
-        grid.addWidget(self._chu_sheng, row, 1)
-        grid.addWidget(lbl_cell('民族'), row, 2)
-        grid.addWidget(self._min_zu, row, 3); row += 1
-        grid.addWidget(lbl_cell('籍贯'), row, 0)
-        grid.addWidget(self._ji_guan, row, 1)
-        grid.addWidget(lbl_cell('出生地'), row, 2)
-        grid.addWidget(self._chu_di, row, 3); row += 1
-        grid.addWidget(lbl_cell('入党时间'), row, 0)
-        grid.addWidget(self._ru_dang, row, 1)
-        grid.addWidget(lbl_cell('参工时间'), row, 2)
-        grid.addWidget(self._can_jia, row, 3)
-        grid.addWidget(lbl_cell('到龄时间'), row, 4)
-        grid.addWidget(self._dao_ling, row, 5, 1, 3); row += 1
-        grid.addWidget(lbl_cell('健康状况'), row, 0)
-        grid.addWidget(self._jian_kang, row, 1)
-        grid.addWidget(lbl_cell('专技职务'), row, 2)
-        grid.addWidget(self._zhuan_ye, row, 3)
-        grid.addWidget(lbl_cell('熟悉专业'), row, 4)
-        grid.addWidget(self._shu_xi, row, 5, 1, 3); row += 1
+        left_lay.addWidget(sec_cell('基本信息'))
+        info_outer = QHBoxLayout()
+        info_outer.setSpacing(0)
+        info_outer.setContentsMargins(0, 0, 0, 0)
+        info_grid = QGridLayout()
+        info_grid.setSpacing(0)
+        info_grid.setContentsMargins(0, 0, 0, 0)
+        info_grid.setColumnMinimumWidth(0, _LW2)
+        info_grid.setColumnMinimumWidth(2, _LW2)
+        info_grid.setColumnStretch(1, 1)
+        info_grid.setColumnStretch(3, 1)
+        info_grid.addWidget(lbl_cell('姓名'), 0, 0)
+        info_grid.addWidget(self._xing_ming, 0, 1)
+        info_grid.addWidget(lbl_cell('性别'), 0, 2)
+        info_grid.addWidget(self._xing_bie, 0, 3)
+        info_grid.addWidget(lbl_cell('出生年月'), 1, 0)
+        info_grid.addWidget(self._chu_sheng, 1, 1)
+        info_grid.addWidget(lbl_cell('民族'), 1, 2)
+        info_grid.addWidget(self._min_zu, 1, 3)
+        info_grid.addWidget(lbl_cell('籍贯'), 2, 0)
+        info_grid.addWidget(self._ji_guan, 2, 1)
+        info_grid.addWidget(lbl_cell('出生地'), 2, 2)
+        info_grid.addWidget(self._chu_di, 2, 3)
+        info_grid.addWidget(lbl_cell('入党时间'), 3, 0)
+        info_grid.addWidget(self._ru_dang, 3, 1)
+        info_grid.addWidget(lbl_cell('参工时间'), 3, 2)
+        info_grid.addWidget(self._can_jia, 3, 3)
+        info_grid.addWidget(lbl_cell('到龄时间'), 4, 0)
+        info_grid.addWidget(self._dao_ling, 4, 1, 1, 3)
+        info_grid.addWidget(lbl_cell('健康状况'), 5, 0)
+        info_grid.addWidget(self._jian_kang, 5, 1)
+        info_grid.addWidget(lbl_cell('专技职务'), 5, 2)
+        info_grid.addWidget(self._zhuan_ye, 5, 3)
+        info_grid.addWidget(lbl_cell('熟悉专业'), 6, 0)
+        info_grid.addWidget(self._shu_xi, 6, 1, 1, 3)
+        info_outer.addLayout(info_grid, 1)
+        info_outer.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop)
+        left_lay.addLayout(info_outer)
 
-        grid.addWidget(sec_cell('学历学位'), row, 0, 1, 8); row += 1
-        for type_lbl, kind_lbl, combo_w, yuan_w in [
+        left_lay.addWidget(sec_cell('学历学位'))
+        edu_grid = QGridLayout()
+        edu_grid.setSpacing(0)
+        edu_grid.setContentsMargins(0, 0, 0, 0)
+        edu_grid.setColumnMinimumWidth(0, 44)
+        edu_grid.setColumnMinimumWidth(1, 40)
+        edu_grid.setColumnStretch(2, 1)
+        edu_grid.setColumnMinimumWidth(3, 92)
+        edu_grid.setColumnStretch(4, 2)
+        for row, (type_lbl, kind_lbl, combo_w, yuan_w) in enumerate([
             ('全日制', '学历', self._qrz_xueli,  self._qrz_xueli_yuan),
             ('全日制', '学位', self._qrz_xuewei, self._qrz_xuewei_yuan),
             ('在职',   '学历', self._zzj_xueli,  self._zzj_xueli_yuan),
             ('在职',   '学位', self._zzj_xuewei, self._zzj_xuewei_yuan),
-        ]:
-            grid.addWidget(lbl_cell(type_lbl), row, 0)
-            grid.addWidget(lbl_cell(kind_lbl), row, 1)
-            grid.addWidget(combo_w, row, 2)
-            grid.addWidget(lbl_cell('毕业院校系及专业'), row, 3)
-            grid.addWidget(yuan_w, row, 4, 1, 4); row += 1
+        ]):
+            tl = lbl_cell(type_lbl, 44)
+            kl = lbl_cell(kind_lbl, 40)
+            yl = lbl_cell('毕业院校系及专业', 92)
+            edu_grid.addWidget(tl, row, 0)
+            edu_grid.addWidget(kl, row, 1)
+            edu_grid.addWidget(combo_w, row, 2)
+            edu_grid.addWidget(yl, row, 3)
+            edu_grid.addWidget(yuan_w, row, 4)
+        left_lay.addLayout(edu_grid)
 
-        grid.addWidget(sec_cell('职务'), row, 0, 1, 8); row += 1
-        for lbl_text, w in [('现任职务', self._xian_ren),
-                             ('拟任职务', self._ni_ren),
-                             ('拟免职务', self._ni_mian)]:
-            grid.addWidget(lbl_cell(lbl_text), row, 0)
-            grid.addWidget(w, row, 1, 1, 7); row += 1
+        left_lay.addWidget(sec_cell('职务'))
+        pos_grid = QGridLayout()
+        pos_grid.setSpacing(0)
+        pos_grid.setContentsMargins(0, 0, 0, 0)
+        pos_grid.setColumnMinimumWidth(0, _LW2)
+        pos_grid.setColumnStretch(1, 1)
+        for r, (lbl_text, w) in enumerate([
+            ('现任职务', self._xian_ren),
+            ('拟任职务', self._ni_ren),
+            ('拟免职务', self._ni_mian),
+        ]):
+            pos_grid.addWidget(lbl_cell(lbl_text), r, 0)
+            pos_grid.addWidget(w, r, 1)
+        left_lay.addLayout(pos_grid)
 
-        grid.addWidget(sec_cell('简历'), row, 0, 1, 8); row += 1
-        grid.addWidget(self._jian_li, row, 0, 1, 8); row += 1
+        left_lay.addWidget(sec_cell('简历'))
+        left_lay.addWidget(self._jian_li, 1)
 
-        grid.addWidget(sec_cell('奖惩情况'), row, 0, 1, 8); row += 1
-        grid.addWidget(self._jiang_cheng, row, 0, 1, 8); row += 1
-        grid.addWidget(sec_cell('年度考核结果'), row, 0, 1, 8); row += 1
-        grid.addWidget(self._nian_du, row, 0, 1, 8); row += 1
-        grid.addWidget(sec_cell('任免理由'), row, 0, 1, 8); row += 1
-        grid.addWidget(self._ren_mian, row, 0, 1, 8); row += 1
-        grid.addWidget(sec_cell('家庭主要成员'), row, 0, 1, 8); row += 1
-        grid.addWidget(self._family, row, 0, 1, 8); row += 1
+        left.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        outer.addWidget(left, 1)
 
-        grid.addWidget(sec_cell('底部信息'), row, 0, 1, 8); row += 1
-        grid.addWidget(lbl_cell('呈报单位'), row, 0)
-        grid.addWidget(self._cheng_bao, row, 1, 1, 7); row += 1
-        grid.addWidget(lbl_cell('改革前年龄'), row, 0)
-        grid.addWidget(self._gai_ge_nll, row, 1, 1, 7); row += 1
-        grid.addWidget(lbl_cell('身份证号'), row, 0)
-        grid.addWidget(self._shen_fen, row, 1)
-        grid.addWidget(lbl_cell('计算年龄'), row, 2)
-        grid.addWidget(self._ji_suan, row, 3, 1, 5); row += 1
-        grid.addWidget(lbl_cell('填表时间'), row, 0)
-        grid.addWidget(self._tian_biao_shi, row, 1)
-        grid.addWidget(lbl_cell('填表人'), row, 2)
-        grid.addWidget(self._tian_biao_ren, row, 3, 1, 5); row += 1
+        # ── 右栏 ──────────────────────────────────────────────────────────
+        right = QWidget()
+        right_lay = QVBoxLayout(right)
+        right_lay.setContentsMargins(0, 0, 0, 0)
+        right_lay.setSpacing(0)
 
-        for col in range(8):
-            grid.setColumnStretch(col, 1)
+        right_lay.addWidget(sec_cell('奖惩情况'))
+        right_lay.addWidget(self._jiang_cheng)
+        right_lay.addWidget(sec_cell('年度考核结果'))
+        right_lay.addWidget(self._nian_du)
+        right_lay.addWidget(sec_cell('任免理由'))
+        right_lay.addWidget(self._ren_mian)
+        right_lay.addWidget(sec_cell('家庭主要成员'))
+        right_lay.addWidget(self._family, 1)
+        right_lay.addWidget(sec_cell('底部信息'))
+
+        bot_grid = QGridLayout()
+        bot_grid.setSpacing(0)
+        bot_grid.setContentsMargins(0, 0, 0, 0)
+        bot_grid.setColumnMinimumWidth(0, 80)
+        bot_grid.setColumnMinimumWidth(2, _LW2)
+        bot_grid.setColumnStretch(1, 1)
+        bot_grid.setColumnStretch(3, 1)
+        bot_grid.addWidget(lbl_cell('呈报单位', 80), 0, 0)
+        bot_grid.addWidget(self._cheng_bao, 0, 1, 1, 3)
+        bot_grid.addWidget(lbl_cell('改革前年龄', 80), 1, 0)
+        bot_grid.addWidget(self._gai_ge_nll, 1, 1, 1, 3)
+        bot_grid.addWidget(lbl_cell('身份证号', 80), 2, 0)
+        bot_grid.addWidget(self._shen_fen, 2, 1)
+        bot_grid.addWidget(lbl_cell('计算年龄'), 2, 2)
+        bot_grid.addWidget(self._ji_suan, 2, 3)
+        bot_grid.addWidget(lbl_cell('填表时间', 80), 3, 0)
+        bot_grid.addWidget(self._tian_biao_shi, 3, 1)
+        bot_grid.addWidget(lbl_cell('填表人'), 3, 2)
+        bot_grid.addWidget(self._tian_biao_ren, 3, 3)
+        right_lay.addLayout(bot_grid)
+
+        right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        outer.addWidget(right, 1)
 
         scroll.setWidget(container)
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(scroll)
+        return scroll
 
     def rebuild_layout(self, mode: str) -> None:
         """切换布局模式（保留字段值）。"""

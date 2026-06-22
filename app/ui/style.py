@@ -516,4 +516,22 @@ QWidget#editorFormA QTextEdit {{
     border: 0.5px solid #CECDCA;
     border-radius: 0;
 }}
+
+/* ── 标签页选中强调色 ────────────────────────────────────────────────── */
+QTabBar::tab {{
+    background: #F5F4F1;
+    color: #555550;
+    padding: 5px 16px;
+    border: none;
+    border-bottom: 2px solid transparent;
+}}
+QTabBar::tab:selected {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-bottom: 2px solid {ACCENT_HOVER};
+}}
+QTabBar::tab:hover:!selected {{
+    background: #EEEDEA;
+    color: #1A1A1A;
+}}
 """
