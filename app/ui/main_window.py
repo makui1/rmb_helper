@@ -227,7 +227,8 @@ class MainWindow(QMainWindow):
             ('批量格式转换', 'convert.svg'),
             ('批量版本兼容', 'compat.svg'),
             ('批量核验/更新', 'verify.svg'),
-            ('生成家庭关系表',   'export.svg'),
+            ('生成家庭关系表', 'export.svg'),
+            ('任免表编辑器', 'rmb.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
@@ -411,6 +412,9 @@ class MainWindow(QMainWindow):
             elif index == 3:
                 from app.ui.tabs.family_tab import FamilyTab
                 tab = FamilyTab(self._file_panel)
+            elif index == 4:
+                from app.ui.tabs.editor_tab import EditorTab
+                tab = EditorTab()
             else:
                 from app.ui.tabs.settings_tab import SettingsTab
                 tab = SettingsTab()
@@ -424,6 +428,11 @@ class MainWindow(QMainWindow):
         if self._file_panel:
             widget = self._tab_widgets[index]
             self._file_panel.setVisible(getattr(widget, 'USES_FILE_PANEL', False))
+        # 编辑器 tab 需要更大的最小窗口尺寸
+        if index == 4:
+            self.setMinimumSize(1400, 1000)
+        else:
+            self.setMinimumSize(800, 500)
 
     def closeEvent(self, event):
         self._settings.setValue('window/geometry', self.saveGeometry())

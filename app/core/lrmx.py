@@ -45,3 +45,14 @@ class LrmxFile:
             member = {child.tag: (child.text or '') for child in item}
             result.append(member)
         return result
+
+    def set_family_members(self, members: list[dict[str, str]]) -> None:
+        container = self._root.find('JiaTingChengYuan')
+        if container is None:
+            container = ET.SubElement(self._root, 'JiaTingChengYuan')
+        container.clear()
+        for m in members:
+            item = ET.SubElement(container, 'Item')
+            for key, val in m.items():
+                child = ET.SubElement(item, key)
+                child.text = val
