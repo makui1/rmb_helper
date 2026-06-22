@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
         self._sidebar_full_width: int = 190
         self._sidebar_collapsed_width: int = 64
         self._resizable: bool = True        # 编辑器 Tab 下禁止手动缩放
+        self._auto_collapsed_for_editor: bool = False
         self._current_index: int = 0
         self._settings = QSettings('rmb_helper', 'rmb_helper')
         # 仅记忆「普通 Tab、非最大化」的窗口几何；编辑器尺寸与最大化状态不记忆
@@ -481,6 +482,14 @@ class MainWindow(QMainWindow):
             # 从编辑器返回普通 Tab 时，恢复进入编辑器前的普通窗口尺寸
             if prev == 4 and not self.isMaximized() and self._normal_geometry:
                 self.restoreGeometry(self._normal_geometry)
+
+        # 自动折叠：切入编辑器时折叠，切出时还原（仅针对「因编辑器而折叠」的情况）
+        if index == 4 and not self._sidebar_collapsed:
+            self._auto_collapsed_for_editor = True
+            self.toggle_sidebar()
+        elif prev == 4 and self._auto_collapsed_for_editor:
+            self._auto_collapsed_for_editor = False
+            self.toggle_sidebar()
 
     def _on_layout_mode_changed(self, mode: str) -> None:
         editor = self._tab_widgets.get(4)
