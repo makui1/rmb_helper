@@ -314,7 +314,8 @@ class EditorTab(QWidget):
         self._jian_li.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         left_lay.addWidget(self._jian_li, 1)
 
-        left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Ignored 水平策略：忽略各自的 sizeHint/最小宽度差异，纯按 stretch 平分
+        left.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         outer.addWidget(left, 1)
 
         # ── 右栏 ─────────────────────────────────────────────────────────
@@ -374,7 +375,7 @@ class EditorTab(QWidget):
         bot_grid.addWidget(self._tian_biao_ren, 3, 3)
 
         right_lay.addLayout(bot_grid)
-        right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         outer.addWidget(right, 1)
 
         self._connect_dirty()
