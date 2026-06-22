@@ -118,6 +118,7 @@ class _DocPane(QWidget):
         self._dirty = False
         self._loading = False
         self._layout_mode = layout_mode
+        self._dirty_connected = False
         self._build_widgets()
         self._install_layout(layout_mode)
         self._connect_dirty()
@@ -698,6 +699,29 @@ class _DocPane(QWidget):
             self.dirty_changed.emit(True)
 
     def _connect_dirty(self):
+        if self._dirty_connected:
+            for w in [self._xing_ming, self._chu_sheng, self._ji_guan, self._chu_di,
+                      self._ru_dang, self._can_jia, self._shu_xi,
+                      self._xian_ren, self._ni_ren, self._ni_mian,
+                      self._qrz_xueli_yuan, self._qrz_xuewei_yuan,
+                      self._zzj_xueli_yuan, self._zzj_xuewei_yuan,
+                      self._cheng_bao, self._shen_fen, self._ji_suan,
+                      self._tian_biao_shi, self._tian_biao_ren]:
+                try: w.textChanged.disconnect(self._mark_dirty)
+                except RuntimeError: pass
+            for w in [self._xing_bie, self._min_zu, self._jian_kang, self._zhuan_ye,
+                      self._qrz_xueli, self._qrz_xuewei, self._zzj_xueli,
+                      self._zzj_xuewei, self._gai_ge_nll]:
+                try: w.currentTextChanged.disconnect(self._mark_dirty)
+                except RuntimeError: pass
+            for w in [self._jian_li, self._jiang_cheng, self._nian_du, self._ren_mian]:
+                try: w.textChanged.disconnect(self._mark_dirty)
+                except RuntimeError: pass
+            try: self._photo.changed.disconnect(self._mark_dirty)
+            except RuntimeError: pass
+            try: self._family.table_modified.disconnect(self._mark_dirty)
+            except RuntimeError: pass
+
         for w in [self._xing_ming, self._chu_sheng, self._ji_guan, self._chu_di,
                   self._ru_dang, self._can_jia, self._shu_xi,
                   self._xian_ren, self._ni_ren, self._ni_mian,
@@ -705,25 +729,16 @@ class _DocPane(QWidget):
                   self._zzj_xueli_yuan, self._zzj_xuewei_yuan,
                   self._cheng_bao, self._shen_fen, self._ji_suan,
                   self._tian_biao_shi, self._tian_biao_ren]:
-            try: w.textChanged.disconnect(self._mark_dirty)
-            except RuntimeError: pass
             w.textChanged.connect(self._mark_dirty)
         for w in [self._xing_bie, self._min_zu, self._jian_kang, self._zhuan_ye,
                   self._qrz_xueli, self._qrz_xuewei, self._zzj_xueli,
                   self._zzj_xuewei, self._gai_ge_nll]:
-            try: w.currentTextChanged.disconnect(self._mark_dirty)
-            except RuntimeError: pass
             w.currentTextChanged.connect(self._mark_dirty)
         for w in [self._jian_li, self._jiang_cheng, self._nian_du, self._ren_mian]:
-            try: w.textChanged.disconnect(self._mark_dirty)
-            except RuntimeError: pass
             w.textChanged.connect(self._mark_dirty)
-        try: self._photo.changed.disconnect(self._mark_dirty)
-        except RuntimeError: pass
         self._photo.changed.connect(self._mark_dirty)
-        try: self._family.table_modified.disconnect(self._mark_dirty)
-        except RuntimeError: pass
         self._family.table_modified.connect(self._mark_dirty)
+        self._dirty_connected = True
 
     @staticmethod
     def _set_combo(combo: QComboBox, value: str) -> None:
