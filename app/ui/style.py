@@ -428,69 +428,31 @@ QWidget#editorToolbar {{
     border-bottom: 0.5px solid #E0DDD6;
 }}
 
-/* ── 任免表编辑器：左侧文件树面板 ────────────────────────────────────── */
+/* ── 任免表编辑器：左侧文件树面板（复用 fileListContainer / fileCountLabel）── */
 QWidget#lrmxTreePanel {{
-    background-color: #F7F6F3;
-    border-right: 0.5px solid #E0DDD6;
+    background: transparent;
 }}
-QWidget#lrmxTreePanel[dragActive="true"] {{
+QWidget#lrmxTreePanel[dragActive="true"] QFrame#fileListContainer {{
+    border-color: {ACCENT};
     background-color: {ACCENT_LIGHT};
-    border-right: 0.5px solid {ACCENT};
-}}
-QWidget#lrmxTreeHeader {{
-    background: transparent;
-    border-bottom: 0.5px solid #E8E6E0;
-}}
-QLabel#lrmxTreeTitle {{
-    color: #888880;
-    font-size: 12px;
-    font-weight: 500;
-    background: transparent;
-}}
-QLabel#lrmxTreeCount {{
-    color: {ACCENT};
-    background-color: {ACCENT_LIGHT};
-    border-radius: 8px;
-    padding: 0 7px;
-    font-size: 11px;
-}}
-QPushButton#lrmxTreeClear {{
-    border: none;
-    background: transparent;
-    color: #AAAAA0;
-    padding: 2px 6px;
-    border-radius: 5px;
-    font-size: 12px;
-}}
-QPushButton#lrmxTreeClear:hover {{
-    background-color: #EAE8E2;
-    color: #C04E28;
 }}
 QTreeWidget#lrmxFileTree {{
     border: none;
-    background: transparent;
+    background-color: transparent;
     outline: none;
     show-decoration-selected: 1;
 }}
 QTreeWidget#lrmxFileTree::item {{
     height: 30px;
-    border-radius: 6px;
-    color: #555550;
-    margin: 1px 4px;
-    padding-left: 2px;
+    color: #333330;
+    border-bottom: 1px solid #ECEAE4;
 }}
 QTreeWidget#lrmxFileTree::item:hover {{
-    background-color: #EEEDE8;
-    color: #1A1A1A;
+    background-color: #F0EEE9;
 }}
 QTreeWidget#lrmxFileTree::item:selected {{
     background-color: {ACCENT_LIGHT};
     color: {ACCENT};
-}}
-QLabel#lrmxTreeHint {{
-    color: #BBBBB4;
-    font-size: 12px;
-    background: transparent;
 }}
 
 /* ── 批量核验：结果区 ────────────────────────────────────────────────── */

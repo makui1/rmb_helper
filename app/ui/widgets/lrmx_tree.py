@@ -1,11 +1,15 @@
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QLabel,
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QFrame, QMenu, QFileDialog,
+    QTreeWidget, QTreeWidgetItem,
 )
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QIcon, QColor, QFont, QDragEnterEvent, QDragLeaveEvent, QDropEvent
+from PySide6.QtGui import (
+    QIcon, QColor, QFont, QPainter,
+    QDragEnterEvent, QDragLeaveEvent, QDropEvent,
+)
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
@@ -13,16 +17,16 @@ _ROLE_PATH = Qt.ItemDataRole.UserRole       # full file path (lrmx nodes)
 _ROLE_DIR  = Qt.ItemDataRole.UserRole + 1  # full dir path (folder nodes)
 
 _ACCENT = QColor('#D85A30')
+_NORMAL = QColor('#333330')
 
 
 class _Tree(QTreeWidget):
-    """空状态绘制拖放提示文字。"""
-    _HINT = '拖放 .lrmx 文件\n或文件夹至此'
+    """空状态时在视口中央绘制拖放提示。"""
+    _HINT = '拖放 .lrmx 文件或文件夹至此，\n或点击「添加」'
 
     def paintEvent(self, event):
         super().paintEvent(event)
         if self.topLevelItemCount() == 0:
-            from PySide6.QtGui import QPainter
             painter = QPainter(self.viewport())
             painter.setPen(QColor('#BBBBB4'))
             f = self.font()
@@ -37,7 +41,11 @@ class _Tree(QTreeWidget):
 
 
 class LrmxTreePanel(QWidget):
-    """左侧 lrmx 文件树面板，支持拖放文件夹/文件。"""
+    """左侧 lrmx 文件树面板，支持拖放文件夹/文件。
+
+    视觉结构对齐其它 Tab 的 LrmxFilePanel：顶部按钮行 + 带边框圆角容器
+    （顶部居中计数标签 + 分隔线 + 文件树）。
+    """
 
     file_selected = Signal(str)  # 点击 lrmx 节点时发出绝对路径
 
@@ -51,38 +59,52 @@ class LrmxTreePanel(QWidget):
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
+        lay.setContentsMargins(8, 12, 8, 12)
+        lay.setSpacing(6)
 
-        # ── 头部：标题 + 计数徽标 + 清空 ────────────────────────────────
-        header = QWidget()
-        header.setObjectName('lrmxTreeHeader')
-        header.setFixedHeight(38)
-        hl = QHBoxLayout(header)
-        hl.setContentsMargins(12, 0, 8, 0)
-        hl.setSpacing(6)
+        # ── 顶部按钮行 ──────────────────────────────────────────────────
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
 
-        title = QLabel('文件列表')
-        title.setObjectName('lrmxTreeTitle')
-        hl.addWidget(title)
-
-        self._count = QLabel('0')
-        self._count.setObjectName('lrmxTreeCount')
-        self._count.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._count.setVisible(False)
-        hl.addWidget(self._count)
-
-        hl.addStretch()
+        self._add_btn = QPushButton('添加')
+        self._add_btn.setIcon(QIcon(str(_ASSETS / 'add-btn.svg')))
+        self._add_btn.setFixedHeight(26)
+        menu = QMenu(self._add_btn)
+        menu.addAction('选择文件…', self._pick_files)
+        menu.addAction('选择文件夹…', self._pick_folder)
+        self._add_btn.setMenu(menu)
 
         self._clear_btn = QPushButton('清空')
-        self._clear_btn.setObjectName('lrmxTreeClear')
-        self._clear_btn.setFixedHeight(24)
-        self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_btn.setIcon(QIcon(str(_ASSETS / 'clear-btn.svg')))
+        self._clear_btn.setFixedHeight(26)
+        self._clear_btn.setToolTip('清空所有文件')
         self._clear_btn.clicked.connect(self.clear)
-        hl.addWidget(self._clear_btn)
-        lay.addWidget(header)
 
-        # ── 文件树 ──────────────────────────────────────────────────────
+        header.addWidget(self._add_btn)
+        header.addWidget(self._clear_btn)
+        lay.addLayout(header)
+
+        # ── 列表容器（边框/圆角，计数固定在顶部）────────────────────────
+        container = QFrame()
+        container.setObjectName('fileListContainer')
+        c_lay = QVBoxLayout(container)
+        c_lay.setContentsMargins(0, 0, 0, 0)
+        c_lay.setSpacing(0)
+
+        self._count = QLabel('')
+        self._count.setObjectName('fileCountLabel')
+        self._count.setContentsMargins(10, 5, 10, 5)
+        self._count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._count.setVisible(False)
+        c_lay.addWidget(self._count)
+
+        self._count_sep = QFrame()
+        self._count_sep.setFixedHeight(1)
+        self._count_sep.setStyleSheet('background-color: #C0BEB8;')
+        self._count_sep.setVisible(False)
+        c_lay.addWidget(self._count_sep)
+
         self._tree = _Tree()
         self._tree.setObjectName('lrmxFileTree')
         self._tree.setHeaderHidden(True)
@@ -92,7 +114,9 @@ class LrmxTreePanel(QWidget):
         self._tree.setFrameShape(QTreeWidget.Shape.NoFrame)
         self._tree.setVerticalScrollMode(QTreeWidget.ScrollMode.ScrollPerPixel)
         self._tree.itemClicked.connect(self._on_clicked)
-        lay.addWidget(self._tree, 1)
+        c_lay.addWidget(self._tree, 1)
+
+        lay.addWidget(container, 1)
 
     # ── public API ──────────────────────────────────────────────────────────
 
@@ -121,8 +145,9 @@ class LrmxTreePanel(QWidget):
     # ── internals ───────────────────────────────────────────────────────────
 
     def _update_count(self):
-        self._count.setText(str(self._file_count))
+        self._count.setText(f'{self._file_count} 个文件')
         self._count.setVisible(self._file_count > 0)
+        self._count_sep.setVisible(self._file_count > 0)
 
     def _add_folder(self, folder: Path) -> None:
         item = QTreeWidgetItem([folder.name])
@@ -172,15 +197,28 @@ class LrmxTreePanel(QWidget):
             item = parent.child(i)
             if item.data(0, _ROLE_PATH) == path:
                 stem = Path(path).stem
-                item.setText(0, f'• {stem}' if modified else stem)
+                item.setText(0, f'{stem} *' if modified else stem)
                 font = item.font(0)
                 font.setWeight(QFont.Weight.DemiBold if modified else QFont.Weight.Normal)
                 item.setFont(0, font)
-                item.setForeground(0, _ACCENT if modified else QColor('#555550'))
+                item.setForeground(0, _ACCENT if modified else _NORMAL)
                 return True
             if self._visit(item, path, modified):
                 return True
         return False
+
+    # ── 文件选择 ────────────────────────────────────────────────────────────
+
+    def _pick_files(self):
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, '选择 lrmx 文件', '', '任免审批表 (*.lrmx)')
+        for p in paths:
+            self.add_path(p)
+
+    def _pick_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, '选择包含 lrmx 文件的文件夹')
+        if folder:
+            self.add_path(folder)
 
     # ── drag & drop ─────────────────────────────────────────────────────────
 
