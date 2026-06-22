@@ -199,6 +199,15 @@ class MainWindow(QMainWindow):
         if editor is not None and hasattr(editor, 'open_path'):
             editor.open_path(path)
 
+    def activate_and_open(self, path: str):
+        """被第二个实例唤起：前置窗口，并在有路径时加载文件。"""
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if path and path.lower().endswith('.lrmx') and Path(path).is_file():
+            self.open_lrmx(path)
+
     def _build_ui(self):
         root_widget = QWidget()
         self.setCentralWidget(root_widget)

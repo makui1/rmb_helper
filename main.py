@@ -3,6 +3,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 from app.ui.main_window import MainWindow
+from app.core.single_instance import SingleInstance
 
 
 def _parse_open_path(argv: list[str]) -> str | None:
@@ -16,7 +17,16 @@ def _parse_open_path(argv: list[str]) -> str | None:
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName('rmb_helper')
-    window = MainWindow(open_path=_parse_open_path(sys.argv))
+    open_path = _parse_open_path(sys.argv)
+
+    # 单实例：若已有窗口在运行，把文件交给它并退出
+    single = SingleInstance()
+    if single.try_hand_off(open_path or ''):
+        return
+
+    window = MainWindow(open_path=open_path)
+    single.start_listening()
+    single.message_received.connect(window.activate_and_open)
     window.show()
     sys.exit(app.exec())
 
