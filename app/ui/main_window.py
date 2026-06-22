@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
             ('批量版本兼容', 'compat.svg'),
             ('批量核验/更新', 'verify.svg'),
             ('生成家庭关系表', 'export.svg'),
-            ('任免表编辑器', 'rmb.svg'),
+            ('任免表编辑器', 'edit.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
