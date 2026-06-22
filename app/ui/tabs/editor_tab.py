@@ -8,7 +8,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QComboBox, QTextEdit,
@@ -306,18 +305,17 @@ class EditorTab(QWidget):
         left_lay.addLayout(pos_grid)
 
         # 简历（等宽字体，使空白字符与有效字符宽度一致，保证缩进对齐）
+        # 字体通过 QSS#resumeEdit 设置——QSS 的 font-family 优先级高于 setFont()
         left_lay.addWidget(_section_label('简历'))
         self._jian_li = QTextEdit()
+        self._jian_li.setObjectName('resumeEdit')
         self._jian_li.setMinimumHeight(200)
         self._jian_li.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        mono = QFont('Consolas')
-        mono.setStyleHint(QFont.StyleHint.Monospace)
-        mono.setFixedPitch(True)
-        mono.setPointSize(10)
-        self._jian_li.setFont(mono)
+        self._jian_li.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         left_lay.addWidget(self._jian_li, 1)
 
-        outer.addWidget(left, 55)
+        left.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        outer.addWidget(left, 1)
 
         # ── 右栏 ─────────────────────────────────────────────────────────
         right = QWidget()
@@ -376,7 +374,8 @@ class EditorTab(QWidget):
         bot_grid.addWidget(self._tian_biao_ren, 3, 3)
 
         right_lay.addLayout(bot_grid)
-        outer.addWidget(right, 45)
+        right.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        outer.addWidget(right, 1)
 
         self._connect_dirty()
         return container
