@@ -5,14 +5,17 @@ from PySide6.QtWidgets import (
     QPushButton, QListWidget, QListWidgetItem,
     QInputDialog, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
+    QRadioButton, QButtonGroup,
 )
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, Signal
 from app.utils.naming import PRESETS
 from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
 from app.core import file_assoc
 
 
 class SettingsTab(QWidget):
+    layout_mode_changed = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._settings = QSettings('rmb_helper', 'rmb_helper')
@@ -109,6 +112,27 @@ class SettingsTab(QWidget):
             layout.addLayout(assoc_row)
             self._refresh_assoc_btn()
 
+        # 编辑器布局
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep2)
+
+        layout_label = QLabel('编辑器布局')
+        layout_label.setObjectName('sectionTitle')
+        layout.addWidget(layout_label)
+
+        layout_row = QHBoxLayout()
+        self._layout_b_btn = QRadioButton('轻量分隔式（默认）')
+        self._layout_a_btn = QRadioButton('严格表格式')
+        self._layout_group = QButtonGroup(self)
+        self._layout_group.addButton(self._layout_b_btn, 0)
+        self._layout_group.addButton(self._layout_a_btn, 1)
+        layout_row.addWidget(self._layout_b_btn)
+        layout_row.addWidget(self._layout_a_btn)
+        layout_row.addStretch()
+        layout.addLayout(layout_row)
+        self._layout_group.idClicked.connect(self._on_layout_changed)
+
         layout.addStretch()
 
     def _refresh_assoc_btn(self):
@@ -162,6 +186,12 @@ class SettingsTab(QWidget):
         for r in rules:
             self._rule_list.addItem(r)
 
+        mode = self._settings.value('editor/layout_mode', 'b')
+        if mode == 'a':
+            self._layout_a_btn.setChecked(True)
+        else:
+            self._layout_b_btn.setChecked(True)
+
         raw = self._settings.value('verify_field_aliases', '')
         if raw:
             try:
@@ -190,3 +220,8 @@ class SettingsTab(QWidget):
 
     def naming_rules(self) -> list[str]:
         return [self._rule_list.item(i).text() for i in range(self._rule_list.count())]
+
+    def _on_layout_changed(self, btn_id: int) -> None:
+        mode = 'a' if btn_id == 1 else 'b'
+        self._settings.setValue('editor/layout_mode', mode)
+        self.layout_mode_changed.emit(mode)
