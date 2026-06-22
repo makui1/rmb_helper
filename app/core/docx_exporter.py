@@ -305,6 +305,14 @@ class DocxExporter:
         tpl.save(out)
         self._post_process(out)
 
+    def export_bytes(self, lrmx: LrmxFile) -> bytes:
+        """导出为 bytes（内部经由临时文件，复用 export() 的后处理逻辑）。"""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / 'out.docx'
+            self.export(lrmx, out)
+            return out.read_bytes()
+
     def _build_context(self, lrmx: LrmxFile, tpl) -> dict:
         raw = lrmx.as_dict()
         birth_ym = _INVIS.sub('', raw.get('ChuShengNianYue', ''))

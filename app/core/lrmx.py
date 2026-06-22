@@ -56,3 +56,14 @@ class LrmxFile:
             for key, val in m.items():
                 child = ET.SubElement(item, key)
                 child.text = val
+
+    @classmethod
+    def create_new(cls) -> 'LrmxFile':
+        """创建无磁盘文件的空 LrmxFile，用于新建文档并另存为。"""
+        root = ET.Element('Person')
+        ET.SubElement(root, 'Version').text = '2.0'
+        inst = cls.__new__(cls)
+        inst.path = None          # type: ignore[assignment]
+        inst._tree = ET.ElementTree(root)
+        inst._root = root
+        return inst
