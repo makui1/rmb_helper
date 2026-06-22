@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QComboBox, QTextEdit,
@@ -48,9 +49,12 @@ def _line(placeholder: str = '', readonly: bool = False) -> QLineEdit:
     return w
 
 
-def _combo(options: list[str], editable: bool = False) -> QComboBox:
+def _combo(options: list[str], editable: bool = True) -> QComboBox:
+    """枚举字段下拉框。选项仅作建议，默认可编辑，用户可输入任意值。"""
     w = QComboBox()
     w.setEditable(editable)
+    if editable:
+        w.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
     w.addItem('')
     for o in options:
         w.addItem(o)
@@ -136,6 +140,12 @@ class EditorTab(QWidget):
         self._path_lbl.setStyleSheet('color: #888; font-size: 11px;')
         lay.addWidget(self._path_lbl, 1)
 
+        self._close_btn = QPushButton('关闭')
+        self._close_btn.setFixedHeight(26)
+        self._close_btn.setEnabled(False)
+        self._close_btn.setToolTip('关闭当前文件')
+        self._close_btn.clicked.connect(self._close_file)
+
         self._save_btn = QPushButton('保存')
         self._save_btn.setFixedHeight(26)
         self._save_btn.setEnabled(False)
@@ -146,6 +156,7 @@ class EditorTab(QWidget):
         self._saveas_btn.setEnabled(False)
         self._saveas_btn.clicked.connect(self._save_as)
 
+        lay.addWidget(self._close_btn)
         lay.addWidget(self._save_btn)
         lay.addWidget(self._saveas_btn)
         return bar
@@ -166,66 +177,74 @@ class EditorTab(QWidget):
         left_lay.setContentsMargins(0, 0, 0, 0)
         left_lay.setSpacing(6)
 
-        # 基本信息 grid（6 列 + 照片列）
+        # 基本信息 grid。前三行每行 4 列（2 个字段对），右侧 cols 4-5 放照片（跨 3 行）。
         info_grid = QGridLayout()
         info_grid.setHorizontalSpacing(6)
         info_grid.setVerticalSpacing(4)
-        # stretch: labels fixed, values stretch
         info_grid.setColumnStretch(1, 1)
         info_grid.setColumnStretch(3, 1)
         info_grid.setColumnStretch(5, 1)
-        info_grid.setColumnMinimumWidth(0, _LW1)
-        info_grid.setColumnMinimumWidth(2, _LW1)
+        info_grid.setColumnMinimumWidth(0, _LW2)
+        info_grid.setColumnMinimumWidth(2, _LW2)
         info_grid.setColumnMinimumWidth(4, _LW2)
 
-        # row 0: 姓名 / 性别 / 出生年月
+        # row 0: 姓名 / 性别
         self._xing_ming  = _line()
         self._xing_bie   = _combo(loader.options('GB22611'))
-        self._chu_sheng  = _line('YYYYMM')
-        info_grid.addWidget(_lbl('姓名'), 0, 0)
+        info_grid.addWidget(_lbl('姓名', _LW2), 0, 0)
         info_grid.addWidget(self._xing_ming, 0, 1)
-        info_grid.addWidget(_lbl('性别'), 0, 2)
+        info_grid.addWidget(_lbl('性别', _LW2), 0, 2)
         info_grid.addWidget(self._xing_bie, 0, 3)
-        info_grid.addWidget(_lbl('出生年月', _LW2), 0, 4)
-        info_grid.addWidget(self._chu_sheng, 0, 5)
 
-        # row 1: 民族 / 籍贯 / 出生地
-        self._min_zu    = _combo(loader.options('GB3304'), editable=True)
+        # row 1: 出生年月 / 民族
+        self._chu_sheng  = _line('YYYYMM')
+        self._min_zu     = _combo(loader.options('GB3304'))
+        info_grid.addWidget(_lbl('出生年月', _LW2), 1, 0)
+        info_grid.addWidget(self._chu_sheng, 1, 1)
+        info_grid.addWidget(_lbl('民族', _LW2), 1, 2)
+        info_grid.addWidget(self._min_zu, 1, 3)
+
+        # row 2: 籍贯 / 出生地
         self._ji_guan   = _line()
         self._chu_di    = _line()
-        info_grid.addWidget(_lbl('民族'), 1, 0)
-        info_grid.addWidget(self._min_zu, 1, 1)
-        info_grid.addWidget(_lbl('籍贯'), 1, 2)
-        info_grid.addWidget(self._ji_guan, 1, 3)
-        info_grid.addWidget(_lbl('出生地', _LW2), 1, 4)
-        info_grid.addWidget(self._chu_di, 1, 5)
+        info_grid.addWidget(_lbl('籍贯', _LW2), 2, 0)
+        info_grid.addWidget(self._ji_guan, 2, 1)
+        info_grid.addWidget(_lbl('出生地', _LW2), 2, 2)
+        info_grid.addWidget(self._chu_di, 2, 3)
 
-        # row 2: 入党 / 参工 / 到龄
+        # 照片：跨前三行，置于右侧 cols 4-5
+        self._photo = PhotoWidget()
+        info_grid.addWidget(
+            self._photo, 0, 4, 3, 2,
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+        )
+
+        # row 3: 入党 / 参工 / 到龄
         self._ru_dang   = _line('YYYYMM')
         self._can_jia   = _line('YYYYMM')
         self._dao_ling  = _line(readonly=True)
-        info_grid.addWidget(_lbl('入党时间', _LW2), 2, 0)
-        info_grid.addWidget(self._ru_dang, 2, 1)
-        info_grid.addWidget(_lbl('参工时间'), 2, 2)
-        info_grid.addWidget(self._can_jia, 2, 3)
-        info_grid.addWidget(_lbl('到龄时间', _LW2), 2, 4)
-        info_grid.addWidget(self._dao_ling, 2, 5)
+        info_grid.addWidget(_lbl('入党时间', _LW2), 3, 0)
+        info_grid.addWidget(self._ru_dang, 3, 1)
+        info_grid.addWidget(_lbl('参工时间', _LW2), 3, 2)
+        info_grid.addWidget(self._can_jia, 3, 3)
+        info_grid.addWidget(_lbl('到龄时间', _LW2), 3, 4)
+        info_grid.addWidget(self._dao_ling, 3, 5)
 
-        # row 3: 健康 / 专技 / 熟悉
+        # row 4: 健康 / 专技 / 熟悉
         self._jian_kang  = _combo(loader.options('GB22613'))
-        self._zhuan_ye   = _combo(loader.options('GB8561'), editable=True)
+        self._zhuan_ye   = _combo(loader.options('GB8561'))
         self._shu_xi     = _line()
-        info_grid.addWidget(_lbl('健康状况'), 3, 0)
-        info_grid.addWidget(self._jian_kang, 3, 1)
-        info_grid.addWidget(_lbl('专技职务', _LW2), 3, 2)
-        info_grid.addWidget(self._zhuan_ye, 3, 3)
-        info_grid.addWidget(_lbl('熟悉专业', _LW2), 3, 4)
-        info_grid.addWidget(self._shu_xi, 3, 5)
+        info_grid.addWidget(_lbl('健康状况', _LW2), 4, 0)
+        info_grid.addWidget(self._jian_kang, 4, 1)
+        info_grid.addWidget(_lbl('专技职务', _LW2), 4, 2)
+        info_grid.addWidget(self._zhuan_ye, 4, 3)
+        info_grid.addWidget(_lbl('熟悉专业', _LW2), 4, 4)
+        info_grid.addWidget(self._shu_xi, 4, 5)
 
-        # row 4: 政治面貌（自由文本，全宽）
+        # row 5: 政治面貌（自由文本，全宽）
         self._zheng_zhi = _line()
-        info_grid.addWidget(_lbl('政治面貌', _LW2), 4, 0)
-        info_grid.addWidget(self._zheng_zhi, 4, 1, 1, 5)
+        info_grid.addWidget(_lbl('政治面貌', _LW2), 5, 0)
+        info_grid.addWidget(self._zheng_zhi, 5, 1, 1, 5)
 
         left_lay.addLayout(info_grid)
 
@@ -286,27 +305,19 @@ class EditorTab(QWidget):
 
         left_lay.addLayout(pos_grid)
 
-        # 简历
+        # 简历（等宽字体，使空白字符与有效字符宽度一致，保证缩进对齐）
         left_lay.addWidget(_section_label('简历'))
         self._jian_li = QTextEdit()
         self._jian_li.setMinimumHeight(200)
         self._jian_li.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        mono = QFont('Consolas')
+        mono.setStyleHint(QFont.StyleHint.Monospace)
+        mono.setFixedPitch(True)
+        mono.setPointSize(10)
+        self._jian_li.setFont(mono)
         left_lay.addWidget(self._jian_li, 1)
 
         outer.addWidget(left, 55)
-
-        # ── 照片列（固定宽） ─────────────────────────────────────────────
-        photo_col = QWidget()
-        photo_col.setFixedWidth(140)
-        pc_lay = QVBoxLayout(photo_col)
-        pc_lay.setContentsMargins(0, 0, 0, 0)
-        pc_lay.setSpacing(0)
-
-        self._photo = PhotoWidget()
-        pc_lay.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        pc_lay.addStretch(1)
-
-        outer.addWidget(photo_col)
 
         # ── 右栏 ─────────────────────────────────────────────────────────
         right = QWidget()
@@ -466,13 +477,60 @@ class EditorTab(QWidget):
 
             self._dirty = False
             self._current_path = path
-            name = Path(path).stem
             self._path_lbl.setText(path)
+            self._close_btn.setEnabled(True)
             self._save_btn.setEnabled(True)
             self._saveas_btn.setEnabled(True)
             self._tree.set_modified(path, False)
         finally:
             self._loading = False
+
+    def _close_file(self) -> None:
+        """关闭当前文件，清空所有字段显示。"""
+        if self._dirty:
+            ret = QMessageBox.question(
+                self, '未保存修改',
+                '当前文件有未保存的修改，关闭前是否保存？',
+                QMessageBox.StandardButton.Save |
+                QMessageBox.StandardButton.Discard |
+                QMessageBox.StandardButton.Cancel,
+            )
+            if ret == QMessageBox.StandardButton.Cancel:
+                return
+            if ret == QMessageBox.StandardButton.Save:
+                self._save()
+
+        self._loading = True
+        try:
+            for w in [self._xing_ming, self._chu_sheng, self._ji_guan, self._chu_di,
+                      self._ru_dang, self._can_jia, self._dao_ling, self._shu_xi,
+                      self._zheng_zhi, self._xian_ren, self._ni_ren, self._ni_mian,
+                      self._qrz_xueli_yuan, self._qrz_xuewei_yuan,
+                      self._zzj_xueli_yuan, self._zzj_xuewei_yuan,
+                      self._cheng_bao, self._shen_fen, self._ji_suan,
+                      self._tian_biao_shi, self._tian_biao_ren]:
+                w.clear()
+            for w in [self._xing_bie, self._min_zu, self._jian_kang, self._zhuan_ye,
+                      self._qrz_xueli, self._qrz_xuewei, self._zzj_xueli,
+                      self._zzj_xuewei, self._gai_ge_nll]:
+                w.setCurrentIndex(0)
+            for w in [self._jian_li, self._jiang_cheng, self._nian_du, self._ren_mian]:
+                w.clear()
+            self._family.load([])
+            self._photo.set_b64('')
+        finally:
+            self._loading = False
+
+        prev_path = self._current_path
+        self._lrmx = None
+        self._current_path = None
+        self._dirty = False
+        if prev_path:
+            self._tree.set_modified(prev_path, False)
+        self._path_lbl.setText('未打开文件')
+        self._close_btn.setEnabled(False)
+        self._save_btn.setEnabled(False)
+        self._saveas_btn.setEnabled(False)
 
     def _mark_dirty(self, *_args):
         if self._loading or self._lrmx is None:
