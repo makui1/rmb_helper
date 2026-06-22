@@ -488,4 +488,32 @@ QComboBox QAbstractItemView::item:selected {{
     background: #3B82F6;
     color: #ffffff;
 }}
+/* ── 编辑器表格式布局 (editorFormA) ──────────────────────────── */
+QWidget#editorFormA QLabel#tableLbl {{
+    border: 0.5px solid #CECDCA;
+    background: #F5F4F1;
+    color: #555;
+    font-size: 12px;
+    padding: 2px 6px;
+    min-height: 28px;
+}}
+QWidget#editorFormA QLabel#tableSecLbl {{
+    border: 0.5px solid #CECDCA;
+    background: #EEEDEA;
+    color: #444;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 2px 6px;
+    min-height: 20px;
+}}
+QWidget#editorFormA QLineEdit,
+QWidget#editorFormA QComboBox {{
+    border: 0.5px solid #CECDCA;
+    border-radius: 0;
+    padding: 2px 4px;
+}}
+QWidget#editorFormA QTextEdit {{
+    border: 0.5px solid #CECDCA;
+    border-radius: 0;
+}}
 """
