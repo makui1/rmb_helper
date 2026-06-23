@@ -35,6 +35,22 @@ class _NoScrollCombo(QComboBox):
             event.ignore()
 
 
+class _HoverIconButton(QPushButton):
+    def __init__(self, icon_normal: QIcon, icon_hover: QIcon, parent=None):
+        super().__init__(parent)
+        self._icon_normal = icon_normal
+        self._icon_hover = icon_hover
+        self.setIcon(icon_normal)
+
+    def enterEvent(self, event):
+        self.setIcon(self._icon_hover)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setIcon(self._icon_normal)
+        super().leaveEvent(event)
+
+
 class _UpdateFieldDialog(QDialog):
     """字段选择对话框，点击「开始更新」后弹出，让用户确认要写入的字段。"""
 
@@ -428,7 +444,10 @@ class _FieldRow(QWidget):
         self._rule_combo.hide()
         layout.addWidget(self._rule_combo)
 
-        self._remove_btn = QPushButton()
+        self._remove_btn = _HoverIconButton(
+            QIcon(str(_ASSETS / 'remove.svg')),
+            QIcon(str(_ASSETS / 'remove-hover.svg')),
+        )
         self._remove_btn.setObjectName('fileItemRemove')
         self._remove_btn.setFixedSize(20, 20)
         self._remove_btn.hide()
@@ -568,6 +587,7 @@ class _MappingWidget(QWidget):
             self._flow_layout.addWidget(tag)
 
         self._tags_container.updateGeometry()
+        QTimer.singleShot(0, self._tags_container.updateGeometry)
 
         for fr in self._field_rows.values():
             fr.set_mapped(None)
