@@ -59,6 +59,7 @@ def _line(placeholder: str = '', readonly: bool = False) -> QLineEdit:
 
 def _combo(options: list[str], editable: bool = True) -> QComboBox:
     w = _ScrollSafeCombo()
+    w.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     w.setEditable(editable)
     if editable:
         w.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
