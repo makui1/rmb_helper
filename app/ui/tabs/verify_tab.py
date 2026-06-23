@@ -586,6 +586,10 @@ class _MappingWidget(QWidget):
             tag.clicked_tag.connect(self._on_tag_clicked)
             self._tags[col] = tag
             self._flow_layout.addWidget(tag)
+            # 必须显式 show()：新建的 tag 在事件循环处理 show 事件前 isVisible()
+            # 为 False，而 _FlowLayout._arrange 会跳过不可见项，导致所有 tag 停在
+            # 默认 (0,0,640,480) 几何、堆叠成「一个标签占满整栏」，须点击才恢复。
+            tag.show()
 
         self._tags_container.updateGeometry()
 
