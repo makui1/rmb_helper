@@ -267,6 +267,7 @@ class MainWindow(QMainWindow):
 
         # 内容区
         from app.ui.tabs.convert_tab import ConvertTab
+        from app.ui.tabs.verify_tab import VerifyTab
 
         self._file_panel = LrmxFilePanel()
         self._file_panel.setMinimumWidth(180)
@@ -274,10 +275,13 @@ class MainWindow(QMainWindow):
 
         convert_tab = ConvertTab(self._file_panel)
         convert_tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
+        verify_tab = VerifyTab(self._file_panel)
+        verify_tab.busy_changed.connect(lambda busy: self._file_panel.setEnabled(not busy))
 
         self._stack = QStackedWidget()
         self._stack.addWidget(convert_tab)
-        self._tab_widgets: dict[int, QWidget] = {0: convert_tab}
+        self._stack.addWidget(verify_tab)
+        self._tab_widgets: dict[int, QWidget] = {0: convert_tab, 2: verify_tab}
 
         content_splitter = QSplitter(Qt.Orientation.Horizontal)
         content_splitter.setChildrenCollapsible(False)
@@ -444,9 +448,6 @@ class MainWindow(QMainWindow):
             if index == 1:
                 from app.ui.tabs.compat_tab import CompatTab
                 tab = CompatTab(self._file_panel)
-            elif index == 2:
-                from app.ui.tabs.verify_tab import VerifyTab
-                tab = VerifyTab(self._file_panel)
             elif index == 3:
                 from app.ui.tabs.family_tab import FamilyTab
                 tab = FamilyTab(self._file_panel)
