@@ -1118,6 +1118,15 @@ class VerifyTab(QWidget):
 
         # Load fixed field list — all widgets now exist
         self._mapping_widget.load_lrmx_fields(LRMX_FIELDS)
+        self._refresh_rules()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._refresh_rules()
+
+    def _refresh_rules(self):
+        rules = rules_from_json(self._settings.value('compare_rules', ''))
+        self._mapping_widget.set_available_rules(rules)
 
     # ── event filter (overlay resize) ────────────────────────────────────────
 
@@ -1210,9 +1219,6 @@ class VerifyTab(QWidget):
     # ── verify ────────────────────────────────────────────────────────────────
 
     def _run(self):
-        raw_cr = self._settings.value('compare_rules', '')
-        rules = rules_from_json(raw_cr)
-        self._mapping_widget.set_available_rules(rules)
         rule_mapping = self._mapping_widget.get_rule_mapping()
         files = self._file_panel.files()
         excel_path = self._xl_edit.text()

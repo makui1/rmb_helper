@@ -840,7 +840,7 @@ class DocxExporter:
                 if k == 'ChuShengRiQi':
                     v_clean = _INVIS.sub('', v)
                     member['Age'] = (
-                        f'{_calc_age(v_clean)}岁'
+                        f'{_calc_age(v_clean)}'
                         if re.fullmatch(r'\d{6}', v_clean) else ''
                     )
                     member[k] = _format_time6(v_clean)
