@@ -71,6 +71,18 @@ _TIME8_FIELDS = frozenset({'JiSuanNianLingShiJian'})
 
 _XUELI_KEY  = 'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
 _XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
+_ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+
+# Fields whose cells should get the same height-aware font-shrink treatment as JianLi.
+_PLAIN_SHRINK_KEYS: tuple[str, ...] = (
+    'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',   # 全日制学历毕业院校系及专业
+    'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',  # 全日制学位毕业院校系及专业
+    'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',       # 在职学历毕业院校系及专业
+    'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',     # 在职学位毕业院校系及专业
+    'XianRenZhiWu',                             # 现任职务
+    'JiangChengQingKuang',                      # 奖惩情况
+)
 
 # Matches all whitespace variants + invisible Unicode chars
 _INVIS = re.compile(r'[\s​‌‍﻿ 　]+')
@@ -295,6 +307,7 @@ class DocxExporter:
         self._xueli_shrink_text: str | None = None
         self._jianli_line_count: int = 0
         self._jianli_lines: list[str] = []
+        self._plain_cell_shrink: list[str] = []
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
         from docxtpl import DocxTemplate
@@ -346,24 +359,49 @@ class DocxExporter:
         # QuanRiZhiJiaoYu XueLi/XueWei overflow:
         #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
         #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
-        self._xueli_shrink_text = None
         xueli  = _INVIS.sub('', raw.get(_XUELI_KEY,  ''))
         xuewei = _INVIS.sub('', raw.get(_XUEWEI_KEY, ''))
         if len(xueli) > 12 and not xuewei:
-            ctx[_XUELI_KEY]  = xueli[:10]
-            ctx[_XUEWEI_KEY] = xueli[10:]
+            ctx[_XUELI_KEY]  = xueli[:12]
+            ctx[_XUEWEI_KEY] = xueli[12:]
         elif len(xueli) > 12:
             ctx[_XUELI_KEY]  = xueli
             ctx[_XUEWEI_KEY] = xuewei
-            self._xueli_shrink_text = xueli
         else:
             ctx[_XUELI_KEY]  = xueli
             ctx[_XUEWEI_KEY] = xuewei
+
+
+        # ZaiZhiJiaoYu XueLi/XueWei overflow:
+        #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
+        #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
+        xueli  = _INVIS.sub('', raw.get(_ZAIZHI_XUELI_KEY,  ''))
+        xuewei = _INVIS.sub('', raw.get(_ZAIZHI_XUEWEI_KEY, ''))
+        if len(xueli) > 12 and not xuewei:
+            ctx[_ZAIZHI_XUELI_KEY]  = xueli[:12]
+            ctx[_ZAIZHI_XUEWEI_KEY] = xueli[12:]
+        elif len(xueli) > 12:
+            ctx[_ZAIZHI_XUELI_KEY]  = xueli
+            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
+        else:
+            ctx[_ZAIZHI_XUELI_KEY]  = xueli
+            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
 
         # JiaTingChengYuan: fixed indexed slots m0..m(MAX_FAMILY_SLOTS-1)
         family = self._build_family(lrmx)
         for i in range(MAX_FAMILY_SLOTS):
             ctx[f'm{i}'] = family[i] if i < len(family) else dict(_EMPTY_MEMBER)
+
+        # Collect rendered texts for height-aware font shrink in post-processing.
+        # ctx values are html-escaped; unescape to recover the actual paragraph text.
+        self._plain_cell_shrink = [
+            t for t in (
+                _html.unescape(ctx[k]).strip()
+                for k in _PLAIN_SHRINK_KEYS
+                if isinstance(ctx.get(k), str)
+            )
+            if t
+        ]
 
         return ctx
 
@@ -375,6 +413,7 @@ class DocxExporter:
         changed = self._shrink_overflow_cells(doc)
         changed |= self._shrink_xueli_cell(doc)
         changed |= self._shrink_jianli_cell(doc)
+        changed |= self._shrink_plain_cells(doc)
         if changed:
             doc.save(path)
 
@@ -597,7 +636,78 @@ class DocxExporter:
                     changed = True
                     para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
                     para.paragraph_format.line_spacing = Pt(target_spacing_pt)
-        return changed    # ── Photo ────────────────────────────────────────────────────────────────
+        return changed
+
+    def _shrink_plain_cells(self, doc) -> bool:
+        """对毕业院校系及专业、现任职务、奖惩情况等单元格按宽高自动缩小字号。
+
+        逻辑与 _shrink_jianli_cell 相同，区别在于这些单元格为单段落纯文本，
+        无悬挂缩进，直接用 ceil(文本宽度 / 单元格可用宽度) 估算视觉行数。
+        """
+        if not self._plain_cell_shrink:
+            return False
+
+        from docx.shared import Pt
+        from docx.enum.text import WD_LINE_SPACING
+
+        target_set = set(self._plain_cell_shrink)
+        max_font_pt = _JIANLI_FONT_TIERS[0][1]
+        candidates = [
+            round(max_font_pt - 0.5 * i, 1)
+            for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
+        ]
+
+        changed = False
+        seen: set[int] = set()
+
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    # cid = id(cell._tc)
+                    # if cid in seen:
+                    #     continue
+                    # seen.add(cid)
+
+                    for para in cell.paragraphs:
+                        if not para.runs:
+                            continue
+                        text = para.text.strip()
+                        if not text or text not in target_set:
+                            continue
+
+                        cell_w_emu = cell.width or 0
+                        cell_h_emu = self._get_cell_height_emu(cell)
+                        cell_w_pt = cell_w_emu / _PT_PER_EMU
+                        cell_h_pt = cell_h_emu / _PT_PER_EMU if cell_h_emu else 0.0
+
+                        if not cell_w_pt or not cell_h_pt:
+                            continue
+
+                        avail_pt = max(cell_w_pt - 2 * _CELL_MARGIN_PT, 1.0)
+
+                        target_pt = None
+                        target_sp_pt = None
+
+                        for font_pt in candidates:
+                            sp_pt = font_pt + 1.0
+                            vis = max(1, math.ceil(_text_width_pt(text, font_pt) / avail_pt))
+                            if vis * sp_pt <= cell_h_pt:
+                                target_pt = font_pt
+                                target_sp_pt = sp_pt
+                                break
+
+                        if target_pt is None or target_pt >= max_font_pt:
+                            continue
+
+                        for run in para.runs:
+                            run.font.size = Pt(target_pt)
+                        para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                        para.paragraph_format.line_spacing = Pt(target_sp_pt)
+                        changed = True
+
+        return changed
+
+    # ── Photo ────────────────────────────────────────────────────────────────
 
     @staticmethod
     def probe_cell_size(template_bytes: bytes) -> tuple[int, int]:
