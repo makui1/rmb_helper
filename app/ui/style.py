@@ -571,6 +571,44 @@ QWidget#editorFormA QTextEdit {{
     border-radius: 0;
 }}
 
+/* ── 编辑器轻量布局 B ─────────────────────────────────────── */
+QWidget#editorFormB QLineEdit,
+QWidget#editorFormB QComboBox {{
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 3px 0;
+}}
+QWidget#editorFormB QLineEdit:focus,
+QWidget#editorFormB QComboBox:focus {{
+    background: {ACCENT_LIGHT};
+}}
+QWidget#editorFormB QLineEdit:read-only {{
+    background: transparent;
+    color: #888880;
+}}
+QWidget#editorFormB QTextEdit {{
+    border: 0.5px solid #E0DDD6;
+    border-radius: 4px;
+    background: #FAFAF8;
+    margin: 4px 0;
+}}
+QLabel#bSecTitle {{
+    font-size: 13px;
+    font-weight: bold;
+    color: #1A1A1A;
+    padding: 14px 0 6px 0;
+}}
+QLabel#bFieldLabel {{
+    color: #888880;
+    font-size: 12px;
+}}
+QFrame#bFieldRow {{
+    border: none;
+    border-bottom: 0.5px solid #E8E6E0;
+    background: transparent;
+}}
+
 /* ── 标签页选中强调色 ────────────────────────────────────────────────── */
 QTabBar::tab {{
     background: #F5F4F1;
