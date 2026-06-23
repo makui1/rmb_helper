@@ -9,8 +9,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor
 
-_PHOTO_W = 120
-_PHOTO_H = 150  # 4:5 预览尺寸
+_PHOTO_W = 134
+_PHOTO_H = 28*6  # 4:5 预览尺寸
 
 
 class _ClickLabel(QLabel):
@@ -240,8 +240,8 @@ class PhotoWidget(QWidget):
 
     def _build_ui(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(4, 4, 4, 4)
-        lay.setSpacing(4)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
 
         self._label = _ClickLabel()
         self._label.setFixedSize(_PHOTO_W, _PHOTO_H)
