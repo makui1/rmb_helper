@@ -588,7 +588,6 @@ class _MappingWidget(QWidget):
             self._flow_layout.addWidget(tag)
 
         self._tags_container.updateGeometry()
-        self._flow_layout.activate()
 
         for fr in self._field_rows.values():
             fr.set_mapped(None)
