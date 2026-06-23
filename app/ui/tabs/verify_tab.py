@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QFileDialog,
     QSizePolicy, QFrame, QProgressBar,
     QScrollArea, QSpinBox, QLayout,
-    QDialog, QGridLayout,
+    QDialog, QGridLayout, QComboBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QRect, QPoint, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
@@ -22,8 +22,17 @@ from app.core.verify_handler import (
     VerifyHandler, PersonResult, FieldResult,
     read_excel_headers, LRMX_FIELDS, DEFAULT_FIELD_ALIASES,
 )
+from app.core.compare_rules import CompareRule, rules_from_json
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
+
+
+class _NoScrollCombo(QComboBox):
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
 
 
 class _UpdateFieldDialog(QDialog):
@@ -393,6 +402,7 @@ class _FieldRow(QWidget):
     def __init__(self, tag: str, display: str, parent=None):
         super().__init__(parent)
         self._field = tag
+        self._rules: list[CompareRule] = []
         self.setObjectName('fieldRow')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -411,6 +421,13 @@ class _FieldRow(QWidget):
         self._map_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._map_lbl, 1)
 
+        self._rule_combo = _NoScrollCombo()
+        self._rule_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._rule_combo.setFixedWidth(110)
+        self._rule_combo.addItem('（默认）')
+        self._rule_combo.hide()
+        layout.addWidget(self._rule_combo)
+
         self._remove_btn = QPushButton()
         self._remove_btn.setObjectName('fileItemRemove')
         self._remove_btn.setFixedSize(20, 20)
@@ -422,13 +439,32 @@ class _FieldRow(QWidget):
         if excel_col:
             self._map_lbl.setText(excel_col)
             self._map_lbl.setObjectName('fieldRowMapped')
+            self._rule_combo.show()
             self._remove_btn.show()
         else:
             self._map_lbl.setText('未匹配')
             self._map_lbl.setObjectName('fieldRowUnmapped')
+            self._rule_combo.setCurrentIndex(0)
+            self._rule_combo.hide()
             self._remove_btn.hide()
         self._map_lbl.style().unpolish(self._map_lbl)
         self._map_lbl.style().polish(self._map_lbl)
+
+    def set_available_rules(self, rules: list[CompareRule]) -> None:
+        current_name = self._rule_combo.currentText()
+        self._rule_combo.clear()
+        self._rule_combo.addItem('（默认）')
+        for rule in rules:
+            self._rule_combo.addItem(rule.name)
+        self._rules = rules
+        idx = self._rule_combo.findText(current_name)
+        self._rule_combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def selected_rule(self) -> CompareRule | None:
+        idx = self._rule_combo.currentIndex()
+        if idx <= 0 or idx - 1 >= len(self._rules):
+            return None
+        return self._rules[idx - 1]
 
     def set_pending(self, pending: bool):
         self.setProperty('pending', pending)
@@ -630,6 +666,19 @@ class _MappingWidget(QWidget):
 
     def get_mapping(self) -> dict[str, str]:
         return dict(self._mapping)
+
+    def set_available_rules(self, rules: list[CompareRule]) -> None:
+        for row in self._field_rows.values():
+            row.set_available_rules(rules)
+
+    def get_rule_mapping(self) -> dict[str, CompareRule]:
+        result: dict[str, CompareRule] = {}
+        for lrmx_field, row in self._field_rows.items():
+            if lrmx_field in self._reverse:
+                rule = row.selected_rule()
+                if rule is not None:
+                    result[lrmx_field] = rule
+        return result
 
     def clear_all(self):
         for lrmx_field in list(self._reverse.keys()):
@@ -1137,6 +1186,10 @@ class VerifyTab(QWidget):
     # ── verify ────────────────────────────────────────────────────────────────
 
     def _run(self):
+        raw_cr = self._settings.value('compare_rules', '')
+        rules = rules_from_json(raw_cr)
+        self._mapping_widget.set_available_rules(rules)
+        rule_mapping = self._mapping_widget.get_rule_mapping()
         files = self._file_panel.files()
         excel_path = self._xl_edit.text()
         mapping = self._mapping_widget.get_mapping()
@@ -1158,6 +1211,7 @@ class VerifyTab(QWidget):
             field_mapping=mapping,
             match_excel_col_for_id=id_col,
             match_excel_col_for_name=name_col,
+            compare_rules=rule_mapping,
         )
 
         self._clear_results()
