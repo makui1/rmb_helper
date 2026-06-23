@@ -71,6 +71,8 @@ _TIME8_FIELDS = frozenset({'JiSuanNianLingShiJian'})
 
 _XUELI_KEY  = 'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
 _XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
+_ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
 
 # Fields whose cells should get the same height-aware font-shrink treatment as JianLi.
 _PLAIN_SHRINK_KEYS: tuple[str, ...] = (
@@ -357,19 +359,33 @@ class DocxExporter:
         # QuanRiZhiJiaoYu XueLi/XueWei overflow:
         #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
         #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
-        self._xueli_shrink_text = None
         xueli  = _INVIS.sub('', raw.get(_XUELI_KEY,  ''))
         xuewei = _INVIS.sub('', raw.get(_XUEWEI_KEY, ''))
         if len(xueli) > 12 and not xuewei:
-            ctx[_XUELI_KEY]  = xueli[:10]
-            ctx[_XUEWEI_KEY] = xueli[10:]
+            ctx[_XUELI_KEY]  = xueli[:12]
+            ctx[_XUEWEI_KEY] = xueli[12:]
         elif len(xueli) > 12:
             ctx[_XUELI_KEY]  = xueli
             ctx[_XUEWEI_KEY] = xuewei
-            self._xueli_shrink_text = xueli
         else:
             ctx[_XUELI_KEY]  = xueli
             ctx[_XUEWEI_KEY] = xuewei
+
+
+        # ZaiZhiJiaoYu XueLi/XueWei overflow:
+        #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
+        #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
+        xueli  = _INVIS.sub('', raw.get(_ZAIZHI_XUELI_KEY,  ''))
+        xuewei = _INVIS.sub('', raw.get(_ZAIZHI_XUEWEI_KEY, ''))
+        if len(xueli) > 12 and not xuewei:
+            ctx[_ZAIZHI_XUELI_KEY]  = xueli[:12]
+            ctx[_ZAIZHI_XUEWEI_KEY] = xueli[12:]
+        elif len(xueli) > 12:
+            ctx[_ZAIZHI_XUELI_KEY]  = xueli
+            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
+        else:
+            ctx[_ZAIZHI_XUELI_KEY]  = xueli
+            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
 
         # JiaTingChengYuan: fixed indexed slots m0..m(MAX_FAMILY_SLOTS-1)
         family = self._build_family(lrmx)
@@ -647,10 +663,10 @@ class DocxExporter:
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    cid = id(cell._tc)
-                    if cid in seen:
-                        continue
-                    seen.add(cid)
+                    # cid = id(cell._tc)
+                    # if cid in seen:
+                    #     continue
+                    # seen.add(cid)
 
                     for para in cell.paragraphs:
                         if not para.runs:
