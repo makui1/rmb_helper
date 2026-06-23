@@ -549,7 +549,7 @@ QWidget#editorFormA QLabel#tableLbl {{
     color: #555;
     font-size: 12px;
     padding: 2px 6px;
-    min-height: 28px;
+    min-height: 20px;
 }}
 QWidget#editorFormA QLabel#tableSecLbl {{
     border: 0.5px solid #CECDCA;
