@@ -18,6 +18,15 @@ from PySide6.QtWidgets import (
     QFrame, QTabWidget,
 )
 
+
+class _ScrollSafeCombo(QComboBox):
+    """滚轮事件仅在控件已获得键盘焦点时生效，防止滚动页面时误改选项。"""
+    def wheelEvent(self, event):
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
 from app.core.dmgrp_loader import get_loader
 from app.core.lrmx import LrmxFile
 from app.ui.widgets.lrmx_tree import LrmxTreePanel
@@ -49,7 +58,7 @@ def _line(placeholder: str = '', readonly: bool = False) -> QLineEdit:
 
 
 def _combo(options: list[str], editable: bool = True) -> QComboBox:
-    w = QComboBox()
+    w = _ScrollSafeCombo()
     w.setEditable(editable)
     if editable:
         w.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
