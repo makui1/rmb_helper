@@ -41,6 +41,7 @@ class _HoverIconButton(QPushButton):
         self._icon_normal = icon_normal
         self._icon_hover = icon_hover
         self.setIcon(icon_normal)
+        self.setStyleSheet("border:None;")
 
     def enterEvent(self, event):
         self.setIcon(self._icon_hover)
@@ -354,11 +355,11 @@ class _FlowLayout(QLayout):
         return self.minimumSize()
 
     def minimumSize(self):
-        sz = QSize()
-        for item in self._items:
-            sz = sz.expandedTo(item.minimumSize())
         m = self.contentsMargins()
-        return sz + QSize(m.left() + m.right(), m.top() + m.bottom())
+        # Returning only the margin size lets QScrollArea(setWidgetResizable=True)
+        # set the container width to the viewport width instead of the widest tag,
+        # which would break wrapping by putting all items on one row.
+        return QSize(m.left() + m.right(), m.top() + m.bottom())
 
     def _arrange(self, rect: QRect, dry: bool) -> int:
         m = self.contentsMargins()
@@ -587,7 +588,6 @@ class _MappingWidget(QWidget):
             self._flow_layout.addWidget(tag)
 
         self._tags_container.updateGeometry()
-        QTimer.singleShot(0, self._tags_container.updateGeometry)
 
         for fr in self._field_rows.values():
             fr.set_mapped(None)
