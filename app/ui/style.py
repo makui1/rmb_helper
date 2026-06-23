@@ -149,6 +149,24 @@ QPushButton#primary:disabled {{
     background-color: #D0A898;
     color: rgba(255,255,255,0.6);
 }}
+QPushButton#secondary {{
+    background-color: transparent;
+    border: 1px solid {ACCENT};
+    color: {ACCENT};
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-weight: 500;
+}}
+QPushButton#secondary:hover {{
+    background-color: {ACCENT_LIGHT};
+}}
+QPushButton#secondary:pressed {{
+    background-color: rgba(216,90,48,0.15);
+}}
+QPushButton#secondary:disabled {{
+    border-color: #D0A898;
+    color: #D0A898;
+}}
 
 /* ── 下拉框 ─────────────────────────────────────────────────────────── */
 QComboBox {{
@@ -428,6 +446,42 @@ QWidget#editorToolbar {{
     background-color: #F5F4F1;
     border-bottom: 0.5px solid #E0DDD6;
 }}
+/* ── 工具栏布局切换（分段控件）───────────────────────────────────────── */
+QPushButton#layoutToggleL {{
+    border: 0.5px solid #C8C6C0;
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+    background: #FFFFFF;
+    color: #555550;
+    padding: 2px 10px;
+    font-size: 12px;
+    min-width: 34px;
+}}
+QPushButton#layoutToggleL:checked {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-color: {ACCENT_HOVER};
+}}
+QPushButton#layoutToggleL:hover:!checked {{
+    background: #EEEDEA;
+}}
+QPushButton#layoutToggleR {{
+    border: 0.5px solid #C8C6C0;
+    border-radius: 0 4px 4px 0;
+    background: #FFFFFF;
+    color: #555550;
+    padding: 2px 10px;
+    font-size: 12px;
+    min-width: 34px;
+}}
+QPushButton#layoutToggleR:checked {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-color: {ACCENT_HOVER};
+}}
+QPushButton#layoutToggleR:hover:!checked {{
+    background: #EEEDEA;
+}}
 
 /* ── 任免表编辑器：左侧文件树面板（复用 fileListContainer / fileCountLabel）── */
 QWidget#lrmxTreePanel {{
@@ -515,6 +569,44 @@ QWidget#editorFormA QComboBox {{
 QWidget#editorFormA QTextEdit {{
     border: 0.5px solid #CECDCA;
     border-radius: 0;
+}}
+
+/* ── 编辑器轻量布局 B ─────────────────────────────────────── */
+QWidget#editorFormB QLineEdit,
+QWidget#editorFormB QComboBox {{
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    padding: 3px 0;
+}}
+QWidget#editorFormB QLineEdit:focus,
+QWidget#editorFormB QComboBox:focus {{
+    background: {ACCENT_LIGHT};
+}}
+QWidget#editorFormB QLineEdit:read-only {{
+    background: transparent;
+    color: #888880;
+}}
+QWidget#editorFormB QTextEdit {{
+    border: 0.5px solid #E0DDD6;
+    border-radius: 4px;
+    background: #FAFAF8;
+    margin: 4px 0;
+}}
+QLabel#bSecTitle {{
+    font-size: 13px;
+    font-weight: bold;
+    color: #1A1A1A;
+    padding: 14px 0 6px 0;
+}}
+QLabel#bFieldLabel {{
+    color: #888880;
+    font-size: 12px;
+}}
+QFrame#bFieldRow {{
+    border: none;
+    border-bottom: 0.5px solid #E8E6E0;
+    background: transparent;
 }}
 
 /* ── 标签页选中强调色 ────────────────────────────────────────────────── */
