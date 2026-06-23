@@ -13,6 +13,7 @@ import openpyxl
 
 from app.core.lrmx import LrmxFile
 from app.core.excel_handler import MatchMode
+from app.core.compare_rules import CompareRule, apply_rule
 
 _INVIS = re.compile(
     r'[\x00-\x1f\x7f-\x9f'
@@ -154,6 +155,7 @@ class VerifyHandler:
         field_mapping: dict[str, str],   # excel_col → lrmx_field
         match_excel_col_for_id: Optional[str],
         match_excel_col_for_name: Optional[str],
+        compare_rules: dict[str, CompareRule] | None = None,
     ) -> None:
         self.excel_path = Path(excel_path)
         self.lrmx_files = [Path(f) for f in lrmx_files]
@@ -162,6 +164,7 @@ class VerifyHandler:
         self.field_mapping = field_mapping
         self._id_col = match_excel_col_for_id
         self._name_col = match_excel_col_for_name
+        self.compare_rules: dict[str, CompareRule] = compare_rules or {}
 
     def _load_excel_index(self) -> dict[str, dict]:
         """Return {match_key: row_dict} from Excel."""
@@ -245,6 +248,10 @@ class VerifyHandler:
                 excel_raw = str(excel_row.get(excel_col) or '')
                 lrmx_raw  = lf.get(lrmx_field)
                 match = _strip(excel_raw) == _strip(lrmx_raw)
+                if not match:
+                    rule = self.compare_rules.get(lrmx_field)
+                    if rule:
+                        match = apply_rule(rule, excel_raw, lrmx_raw)
                 if not match:
                     any_diff = True
                 field_results.append(FieldResult(
