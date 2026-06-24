@@ -5,7 +5,7 @@ import html as _html_lib
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QLineEdit, QCheckBox, QMessageBox,
+    QPushButton, QLineEdit, QCheckBox,
     QRadioButton, QButtonGroup, QFileDialog,
     QSizePolicy, QFrame, QProgressBar,
     QScrollArea, QSpinBox, QLayout,
@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal, QSize, QEvent, QRect, QPoint, QTimer
 from app.ui.workers import BaseWorker
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
 from app.ui.widgets.file_panel import LrmxFilePanel
+from app.ui.utils import show_error, show_warning
 
 from PySide6.QtCore import QSettings
 
@@ -1360,7 +1361,7 @@ class VerifyTab(QWidget):
     def _on_update_critical(self, msg: str):
         self.busy_changed.emit(False)
         self._update_loading_overlay.hide()
-        QMessageBox.critical(self, 'Excel 读取失败', msg)
+        show_error(self, msg)
         self._back_to_setup()
 
     def _on_update_finished(self):
@@ -1488,7 +1489,7 @@ class VerifyTab(QWidget):
             self._loading_overlay.set_text('核验中，请稍候…')
 
             if errors:
-                QMessageBox.warning(self, '导出失败', '\n'.join(errors))
+                show_warning(self, '\n'.join(errors))
 
             if saved:
                 self._export_status_lbl.setText(f'✓ 已保存到 {directory}')

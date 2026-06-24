@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFileDialog, QMessageBox, QSizePolicy,
     QFrame, QTabWidget,
 )
+from app.ui.utils import show_error, show_warning
 
 
 class _ScrollSafeCombo(QComboBox):
@@ -692,7 +693,7 @@ class _DocPane(QWidget):
             self.dirty_changed.emit(False)
             return True
         except Exception as e:
-            QMessageBox.critical(self, '保存失败', str(e))
+            show_error(self, str(e))
             return False
 
     def save_as(self) -> bool:
@@ -713,7 +714,7 @@ class _DocPane(QWidget):
             self.path_changed.emit(path)
             return True
         except Exception as e:
-            QMessageBox.critical(self, '保存失败', str(e))
+            show_error(self, str(e))
             return False
 
     def is_dirty(self) -> bool:
@@ -978,7 +979,7 @@ class EditorTab(QWidget):
         try:
             pane.load(path)
         except Exception as e:
-            QMessageBox.critical(self, '打开失败', str(e))
+            show_error(self, str(e))
             return
         idx = self._tabs.addTab(pane, Path(path).name)
         self._tabs.setCurrentIndex(idx)
@@ -1068,8 +1069,7 @@ class EditorTab(QWidget):
             from app.core.pdf_exporter import PdfExporter, detect_engine, PdfEngine
             engine = detect_engine()
             if engine == PdfEngine.NONE:
-                QMessageBox.warning(self, '无法导出',
-                    '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
+                show_warning(self, '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
                 return
             cp = pane.current_path()
             if cp:
@@ -1094,7 +1094,7 @@ class EditorTab(QWidget):
                 tmp_docx.unlink(missing_ok=True)
             QMessageBox.information(self, '导出成功', f'已保存至：\n{dest}')
         except Exception as e:
-            QMessageBox.critical(self, '导出失败', str(e))
+            show_error(self, str(e))
 
     def _on_print_btn(self) -> None:
         pane = self._active_pane()
@@ -1111,8 +1111,7 @@ class EditorTab(QWidget):
             from app.ui.widgets.print_preview import PrintPreviewDialog
             engine = detect_engine()
             if engine == PdfEngine.NONE:
-                QMessageBox.warning(self, '无法打印',
-                    '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
+                show_warning(self, '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
                 return
             tpl = get_template_path()
             docx_bytes = DocxExporter(tpl).export_bytes(lrmx)
@@ -1128,7 +1127,7 @@ class EditorTab(QWidget):
             dlg = PrintPreviewDialog(tmp_pdf, self)
             dlg.exec()
         except Exception as e:
-            QMessageBox.critical(self, '打印失败', str(e))
+            show_error(self, str(e))
 
     # ── drag & drop ──────────────────────────────────────────────────────────
 

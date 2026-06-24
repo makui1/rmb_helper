@@ -14,6 +14,7 @@ from app.utils.naming import PRESETS
 from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
 from app.core import file_assoc
 from app.core.compare_rules import CompareRule, rules_to_json, rules_from_json, validate_date_format, validate_regex_pattern
+from app.ui.utils import show_error, show_warning
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
@@ -357,7 +358,7 @@ class SettingsTab(QWidget):
                     self, '关联成功',
                     '已关联 .lrmx 文件。\n现在双击 .lrmx 文件即可用本工具打开。')
         except Exception as e:
-            QMessageBox.critical(self, '操作失败', f'修改文件关联失败：\n{e}')
+            show_error(self, f'修改文件关联失败：\n{e}')
         self._refresh_assoc_btn()
 
     def _add_rule(self):
