@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QPushButton, QCheckBox, QLineEdit, QComboBox, QTextEdit,
     QFileDialog, QSizePolicy, QProgressBar,
 )
-from PySide6.QtCore import Qt, QSettings, QThread, Signal, QSize
+from PySide6.QtCore import Qt, QSettings, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.core.lrmx import LrmxFile
@@ -14,14 +14,13 @@ from app.core.docx_exporter import DocxExporter, get_template_path
 from app.core.pdf_exporter import PdfExporter
 from app.utils.naming import apply_rule, clean_field, PRESETS
 from app.ui.widgets.file_panel import LrmxFilePanel
+from app.ui.workers import BaseWorker
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
 
-class _Worker(QThread):
-    log = Signal(str)                   # message (prefixed with ✓ / △ / ✗)
+class _Worker(BaseWorker):
     finished = Signal(int, int, float)  # done, total, elapsed_seconds
-    progress = Signal(int)              # current step
 
     def __init__(self, files, output_dir, sub_dir, naming_rule, do_docx, do_pdf,
                  sibling_dir=False, collect_lrmx=False):
