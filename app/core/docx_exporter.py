@@ -326,74 +326,71 @@ class DocxExporter:
             self.export(lrmx, out)
             return out.read_bytes()
 
-    def _build_context(self, lrmx: LrmxFile, tpl) -> dict:
-        raw = lrmx.as_dict()
+    def _ctx_time_fields(self, raw: dict) -> dict:
+        """格式化出生、到龄、六位/八位时间字段。"""
         birth_ym = _INVIS.sub('', raw.get('ChuShengNianYue', ''))
+        ctx: dict = {}
+        ctx['ChuShengNianYue'] = _format_birth(raw.get('ChuShengNianYue', ''))
+        ctx['DaoLingNianYue']  = _format_retire_age(raw.get('DaoLingNianYue', ''), birth_ym)
+        for key in _TIME6_FIELDS:
+            ctx[key] = _format_time6(raw.get(key, ''))
+        for key in _TIME8_FIELDS:
+            ctx[key] = _format_time8(raw.get(key, ''))
+        return ctx
 
+    def _ctx_education_fields(self, raw: dict) -> dict:
+        """处理学历/学位字段溢出（超 12 字时的拆分/标记逻辑）。"""
+        ctx: dict = {}
+        for xueli_key, xuewei_key in [
+            (_XUELI_KEY, _XUEWEI_KEY),
+            (_ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY),
+        ]:
+            xueli  = _INVIS.sub('', raw.get(xueli_key,  ''))
+            xuewei = _INVIS.sub('', raw.get(xuewei_key, ''))
+            if len(xueli) > 12 and not xuewei:
+                ctx[xueli_key]  = xueli[:12]
+                ctx[xuewei_key] = xueli[12:]
+            else:
+                ctx[xueli_key]  = xueli
+                ctx[xuewei_key] = xuewei
+        return ctx
+
+    def _ctx_plain_fields(self, raw: dict, skip_keys: set) -> dict:
+        """对未单独处理的字段做 escape + 不可见字符清理。"""
         ctx: dict = {}
         for key, value in raw.items():
-            if key in ('JianLi', _XUELI_KEY, _XUEWEI_KEY):
-                continue  # handled separately below
-            elif key == 'ZhaoPian':
-                ctx[key] = self._decode_photo(value, tpl)
-            elif key == 'ChuShengNianYue':
-                ctx[key] = _format_birth(value)
-            elif key == 'DaoLingNianYue':
-                ctx[key] = _format_retire_age(value, birth_ym)
-            elif key in _TIME6_FIELDS:
-                ctx[key] = _format_time6(value)
-            elif key in _TIME8_FIELDS:
-                ctx[key] = _format_time8(value)
-            else:
-                ctx[key] = _html.escape(_INVIS.sub('', value), quote=False)
+            if key in skip_keys:
+                continue
+            ctx[key] = _html.escape(_INVIS.sub('', value), quote=False)
+        return ctx
 
-        # JianLi: list of 'time<TAB>experience' strings for a
-        # {%p for line in JianLi %}{{line}}{%p endfor %} loop. Column alignment
-        # (hanging indent) is configured in the template, not here.
+    def _build_context(self, lrmx: LrmxFile, tpl) -> dict:
+        raw = lrmx.as_dict()
+
+        SPECIAL_KEYS = {'JianLi', _XUELI_KEY, _XUEWEI_KEY,
+                        _ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY,
+                        'ZhaoPian', 'ChuShengNianYue', 'DaoLingNianYue',
+                        *_TIME6_FIELDS, *_TIME8_FIELDS}
+
+        ctx: dict = {}
+        ctx.update(self._ctx_plain_fields(raw, SPECIAL_KEYS))
+        ctx.update(self._ctx_time_fields(raw))
+        ctx.update(self._ctx_education_fields(raw))
+        ctx['ZhaoPian'] = self._decode_photo(raw.get('ZhaoPian', ''), tpl)
+
+        # JianLi
         jianli_raw = _format_jianli_list(raw.get('JianLi', ''))
         jianli = [_html.escape(l, quote=False) for l in jianli_raw]
         self._jianli_line_count = len(jianli)
-        self._jianli_lines = jianli_raw   # unescaped, for width estimation
+        self._jianli_lines = jianli_raw
         ctx['JianLi'] = jianli
 
-        # QuanRiZhiJiaoYu XueLi/XueWei overflow:
-        #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
-        #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
-        xueli  = _INVIS.sub('', raw.get(_XUELI_KEY,  ''))
-        xuewei = _INVIS.sub('', raw.get(_XUEWEI_KEY, ''))
-        if len(xueli) > 12 and not xuewei:
-            ctx[_XUELI_KEY]  = xueli[:12]
-            ctx[_XUEWEI_KEY] = xueli[12:]
-        elif len(xueli) > 12:
-            ctx[_XUELI_KEY]  = xueli
-            ctx[_XUEWEI_KEY] = xuewei
-        else:
-            ctx[_XUELI_KEY]  = xueli
-            ctx[_XUEWEI_KEY] = xuewei
-
-
-        # ZaiZhiJiaoYu XueLi/XueWei overflow:
-        #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
-        #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
-        xueli  = _INVIS.sub('', raw.get(_ZAIZHI_XUELI_KEY,  ''))
-        xuewei = _INVIS.sub('', raw.get(_ZAIZHI_XUEWEI_KEY, ''))
-        if len(xueli) > 12 and not xuewei:
-            ctx[_ZAIZHI_XUELI_KEY]  = xueli[:12]
-            ctx[_ZAIZHI_XUEWEI_KEY] = xueli[12:]
-        elif len(xueli) > 12:
-            ctx[_ZAIZHI_XUELI_KEY]  = xueli
-            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
-        else:
-            ctx[_ZAIZHI_XUELI_KEY]  = xueli
-            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
-
-        # JiaTingChengYuan: fixed indexed slots m0..m(MAX_FAMILY_SLOTS-1)
+        # 家庭成员
         family = self._build_family(lrmx)
         for i in range(MAX_FAMILY_SLOTS):
             ctx[f'm{i}'] = family[i] if i < len(family) else dict(_EMPTY_MEMBER)
 
-        # Collect rendered texts for height-aware font shrink in post-processing.
-        # ctx values are html-escaped; unescape to recover the actual paragraph text.
+        # 收集待收缩的纯文本单元格内容
         self._plain_cell_shrink = [
             t for t in (
                 _html.unescape(ctx[k]).strip()
