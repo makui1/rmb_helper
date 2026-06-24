@@ -549,9 +549,8 @@ class DocxExporter:
             total += content_line_count
         return total
 
-    def _shrink_jianli_cell(self, doc) -> bool:
-        from docx.shared import Pt
-        from docx.enum.text import WD_LINE_SPACING
+    def _find_jianli_cells(self, doc) -> list:
+        """扫描文档，返回含简历内容的单元格信息列表。"""
         from typing import NamedTuple
 
         class _CellInfo(NamedTuple):
@@ -559,7 +558,6 @@ class DocxExporter:
             width_emu: int
             height_pt: float
 
-        # ── 第一步：找到简历单元格，同时取宽度和高度 ──────────────────────────────
         jianli_cells: list[_CellInfo] = []
         seen: set[int] = set()
         for table in doc.tables:
@@ -577,55 +575,47 @@ class DocxExporter:
                         width_emu=cell.width or 0,
                         height_pt=row_h_pt,
                     ))
+        return jianli_cells
 
-        if not jianli_cells:
-            return False
-
-        cell_w = jianli_cells[0].width_emu
-        cell_h_pt = jianli_cells[0].height_pt
-
-        # ── 第二步：枚举字号，求满足 f(x)*(x+1) <= cell_h_pt 的最大 x ────────────
+    def _calc_jianli_target_font(self, cell_w: int, cell_h_pt: float) -> tuple[float, float]:
+        """返回 (target_pt, target_spacing_pt)。"""
         max_font_pt = _JIANLI_FONT_TIERS[0][1]
         candidates = [
             round(max_font_pt - 0.5 * i, 1)
             for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
         ]
 
-        target_pt = _MIN_FONT_PT
-        target_spacing_pt = _MIN_FONT_PT + 1.0
-
         if cell_w and cell_h_pt:
             for font_pt in candidates:
                 spacing_pt = font_pt + 1.0
                 vis = self._estimate_jianli_visual_lines(cell_w, font_pt)
                 if vis * spacing_pt <= cell_h_pt:
-                    target_pt = font_pt
-                    target_spacing_pt = spacing_pt
-                    print(
-                        f'[JianLi] 数据行={self._jianli_line_count}  字号={font_pt}pt'
-                        f'  行距={spacing_pt}pt  估算视觉行={vis}'
-                        f'  所需高度={vis * spacing_pt:.1f}pt  单元格高={cell_h_pt:.1f}pt  ✓'
-                    )
-                    break
-                print(
-                    f'[JianLi] 字号={font_pt}pt  行距={spacing_pt}pt'
-                    f'  估算视觉行={vis}  所需高度={vis * spacing_pt:.1f}pt > {cell_h_pt:.1f}pt  ✗'
-                )
+                    return font_pt, spacing_pt
+            return _MIN_FONT_PT, _MIN_FONT_PT + 1.0
         else:
             vis = self._jianli_line_count
             for line_limit, font_pt in _JIANLI_FONT_TIERS:
                 if vis <= line_limit:
-                    target_pt = font_pt
-                    target_spacing_pt = font_pt + 1.0
-                    break
-            else:
-                target_pt = _JIANLI_FONT_TIERS[-1][1]
-                target_spacing_pt = target_pt + 1.0
+                    return font_pt, font_pt + 1.0
+            last_pt = _JIANLI_FONT_TIERS[-1][1]
+            return last_pt, last_pt + 1.0
 
+    def _shrink_jianli_cell(self, doc) -> bool:
+        from docx.shared import Pt
+        from docx.enum.text import WD_LINE_SPACING
+
+        jianli_cells = self._find_jianli_cells(doc)
+        if not jianli_cells:
+            return False
+
+        cell_w = jianli_cells[0].width_emu
+        cell_h_pt = jianli_cells[0].height_pt
+        target_pt, target_spacing_pt = self._calc_jianli_target_font(cell_w, cell_h_pt)
+
+        max_font_pt = _JIANLI_FONT_TIERS[0][1]
         if target_pt >= max_font_pt:
             return False
 
-        # ── 第三步：应用字号与行距 ────────────────────────────────────────────────
         changed = False
         for info in jianli_cells:
             for para in info.cell.paragraphs:
@@ -635,12 +625,26 @@ class DocxExporter:
                     para.paragraph_format.line_spacing = Pt(target_spacing_pt)
         return changed
 
-    def _shrink_plain_cells(self, doc) -> bool:
-        """对毕业院校系及专业、现任职务、奖惩情况等单元格按宽高自动缩小字号。
+    def _calc_plain_cell_target_font(
+        self, text: str, cell_w_pt: float, cell_h_pt: float
+    ) -> tuple[float | None, float | None]:
+        """返回 (target_pt, target_sp_pt)；无需收缩时返回 (None, None)。"""
+        max_font_pt = _JIANLI_FONT_TIERS[0][1]
+        candidates = [
+            round(max_font_pt - 0.5 * i, 1)
+            for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
+        ]
+        avail_pt = max(cell_w_pt - 2 * _CELL_MARGIN_PT, 1.0)
+        for font_pt in candidates:
+            sp_pt = font_pt + 1.0
+            vis = max(1, math.ceil(_text_width_pt(text, font_pt) / avail_pt))
+            if vis * sp_pt <= cell_h_pt:
+                if font_pt >= max_font_pt:
+                    return None, None
+                return font_pt, sp_pt
+        return None, None
 
-        逻辑与 _shrink_jianli_cell 相同，区别在于这些单元格为单段落纯文本，
-        无悬挂缩进，直接用 ceil(文本宽度 / 单元格可用宽度) 估算视觉行数。
-        """
+    def _shrink_plain_cells(self, doc) -> bool:
         if not self._plain_cell_shrink:
             return False
 
@@ -648,23 +652,11 @@ class DocxExporter:
         from docx.enum.text import WD_LINE_SPACING
 
         target_set = set(self._plain_cell_shrink)
-        max_font_pt = _JIANLI_FONT_TIERS[0][1]
-        candidates = [
-            round(max_font_pt - 0.5 * i, 1)
-            for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
-        ]
-
         changed = False
-        seen: set[int] = set()
 
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    # cid = id(cell._tc)
-                    # if cid in seen:
-                    #     continue
-                    # seen.add(cid)
-
                     for para in cell.paragraphs:
                         if not para.runs:
                             continue
@@ -672,28 +664,17 @@ class DocxExporter:
                         if not text or text not in target_set:
                             continue
 
-                        cell_w_emu = cell.width or 0
+                        cell_w_pt = (cell.width or 0) / _PT_PER_EMU
                         cell_h_emu = self._get_cell_height_emu(cell)
-                        cell_w_pt = cell_w_emu / _PT_PER_EMU
                         cell_h_pt = cell_h_emu / _PT_PER_EMU if cell_h_emu else 0.0
 
                         if not cell_w_pt or not cell_h_pt:
                             continue
 
-                        avail_pt = max(cell_w_pt - 2 * _CELL_MARGIN_PT, 1.0)
-
-                        target_pt = None
-                        target_sp_pt = None
-
-                        for font_pt in candidates:
-                            sp_pt = font_pt + 1.0
-                            vis = max(1, math.ceil(_text_width_pt(text, font_pt) / avail_pt))
-                            if vis * sp_pt <= cell_h_pt:
-                                target_pt = font_pt
-                                target_sp_pt = sp_pt
-                                break
-
-                        if target_pt is None or target_pt >= max_font_pt:
+                        target_pt, target_sp_pt = self._calc_plain_cell_target_font(
+                            text, cell_w_pt, cell_h_pt
+                        )
+                        if target_pt is None:
                             continue
 
                         for run in para.runs:
