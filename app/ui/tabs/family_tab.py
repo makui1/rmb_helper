@@ -5,13 +5,14 @@ from PySide6.QtWidgets import (
     QPushButton, QLineEdit, QComboBox, QTextEdit,
     QFileDialog, QFrame, QProgressBar, QCheckBox,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QIcon, QDragEnterEvent, QDropEvent
 
 from app.core.excel_exporter import ExcelExporter, fmt_birth, normalize_birth
 from app.core.lrmx import LrmxFile
 from app.utils.naming import PRESETS, apply_rule
 from app.ui.widgets.file_panel import LrmxFilePanel
+from app.ui.workers import BaseWorker
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
@@ -19,10 +20,9 @@ _DEFAULT_RULE  = '{XingMing}{ChuShengNianYue}'
 _DEFAULT_LABEL = '默认（姓名+出生年月）'
 
 
-class _FamilyWorker(QThread):
-    log      = Signal(str)
-    progress = Signal(int)
+class _FamilyWorker(BaseWorker):
     finished = Signal(int, int, int, int)  # ok, skip, error, total
+    # log 和 progress 已由 BaseWorker 声明
 
     def __init__(self, files, output_dir, naming_rule, on_exists, exporter, fix_birth=False):
         super().__init__()
