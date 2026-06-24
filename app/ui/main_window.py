@@ -64,7 +64,7 @@ class _TitleBar(QWidget):
 
         # ── 左侧区域：应用图标 + 分隔线 + 折叠按钮
         app_icon = QLabel()
-        app_icon.setPixmap(QIcon(str(_ASSETS / 'icon.ico')).pixmap(QSize(18, 18)))
+        app_icon.setPixmap(QIcon(str(_ASSETS / 'rmb.ico')).pixmap(QSize(18, 18)))
         app_icon.setFixedSize(26, 30)
         app_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         app_icon.setStyleSheet('background: transparent;')
@@ -173,7 +173,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('干部任免审批表管理工具')
         self.resize(1250, 700)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
+        self.setWindowIcon(QIcon(str(_ASSETS / 'rmb.ico')))
         self.setStyleSheet(QSS)
         self._sidebar_container: QWidget | None = None
         self._title_bar: _TitleBar | None = None

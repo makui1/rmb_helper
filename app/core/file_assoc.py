@@ -32,7 +32,7 @@ def _launch_command() -> str:
 def _icon_value() -> str:
     if getattr(sys, 'frozen', False):
         return f'"{Path(sys.executable)}",0'
-    return str(Path(__file__).resolve().parents[1] / 'ui' / 'assets' / 'icon.ico')
+    return str(Path(__file__).resolve().parents[1] / 'ui' / 'assets' / 'rmb.ico')
 
 
 def is_registered() -> bool:
