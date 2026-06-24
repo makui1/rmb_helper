@@ -208,6 +208,55 @@ class _DocPane(QWidget):
         root.addWidget(scroll)
         self._layout_mode = mode
 
+    def _build_lb_basic_section(self, row) -> QWidget:
+        """layout_b 基本信息区（含照片右浮）。"""
+        basic_outer = QHBoxLayout()
+        basic_outer.setSpacing(16)
+        basic_outer.setContentsMargins(0, 0, 0, 0)
+        basic_col = QVBoxLayout()
+        basic_col.setSpacing(0)
+        basic_col.setContentsMargins(0, 0, 0, 0)
+        for lbl_text, w in [
+            ('姓名',    self._xing_ming),
+            ('性别',    self._xing_bie),
+            ('出生年月', self._chu_sheng),
+            ('民族',    self._min_zu),
+            ('籍贯',    self._ji_guan),
+            ('出生地',  self._chu_di),
+            ('入党时间', self._ru_dang),
+            ('参工时间', self._can_jia),
+            ('到龄时间', self._dao_ling),
+            ('健康状况', self._jian_kang),
+            ('专技职务', self._zhuan_ye),
+            ('熟悉专业', self._shu_xi),
+        ]:
+            basic_col.addWidget(row(lbl_text, w))
+        photo_right = QVBoxLayout()
+        photo_right.setContentsMargins(0, 0, 0, 0)
+        photo_right.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop)
+        photo_right.addStretch()
+        basic_outer.addLayout(basic_col, 1)
+        basic_outer.addLayout(photo_right, 0)
+        container = QWidget()
+        container.setLayout(basic_outer)
+        return container
+
+    def _build_lb_edu_section(self, sec, row) -> list:
+        """返回 layout_b 学历学位区的 widget 列表。"""
+        items = [sec('学历学位')]
+        for lbl_text, w in [
+            ('全日制学历', self._qrz_xueli),
+            ('全日制院校', self._qrz_xueli_yuan),
+            ('全日制学位', self._qrz_xuewei),
+            ('全日制院校', self._qrz_xuewei_yuan),
+            ('在职学历',  self._zzj_xueli),
+            ('在职院校',  self._zzj_xueli_yuan),
+            ('在职学位',  self._zzj_xuewei),
+            ('在职院校',  self._zzj_xuewei_yuan),
+        ]:
+            items.append(row(lbl_text, w))
+        return items
+
     def _build_layout_b(self) -> QScrollArea:
         """轻量分隔式布局：简历风格单列，各节下划线分隔，照片右浮。"""
         scroll = QScrollArea()
@@ -239,52 +288,12 @@ class _DocPane(QWidget):
             lay.addWidget(widget, 1)
             return frame
 
-        # ── 基本信息（照片右浮）
         col.addWidget(_sec('基本信息'))
-        basic_outer = QHBoxLayout()
-        basic_outer.setSpacing(16)
-        basic_outer.setContentsMargins(0, 0, 0, 0)
-        basic_col = QVBoxLayout()
-        basic_col.setSpacing(0)
-        basic_col.setContentsMargins(0, 0, 0, 0)
-        for lbl_text, w in [
-            ('姓名',    self._xing_ming),
-            ('性别',    self._xing_bie),
-            ('出生年月', self._chu_sheng),
-            ('民族',    self._min_zu),
-            ('籍贯',    self._ji_guan),
-            ('出生地',  self._chu_di),
-            ('入党时间', self._ru_dang),
-            ('参工时间', self._can_jia),
-            ('到龄时间', self._dao_ling),
-            ('健康状况', self._jian_kang),
-            ('专技职务', self._zhuan_ye),
-            ('熟悉专业', self._shu_xi),
-        ]:
-            basic_col.addWidget(_row(lbl_text, w))
-        photo_right = QVBoxLayout()
-        photo_right.setContentsMargins(0, 0, 0, 0)
-        photo_right.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop)
-        photo_right.addStretch()
-        basic_outer.addLayout(basic_col, 1)
-        basic_outer.addLayout(photo_right, 0)
-        col.addLayout(basic_outer)
+        col.addWidget(self._build_lb_basic_section(_row))
 
-        # ── 学历学位
-        col.addWidget(_sec('学历学位'))
-        for lbl_text, w in [
-            ('全日制学历', self._qrz_xueli),
-            ('全日制院校', self._qrz_xueli_yuan),
-            ('全日制学位', self._qrz_xuewei),
-            ('全日制院校', self._qrz_xuewei_yuan),
-            ('在职学历',  self._zzj_xueli),
-            ('在职院校',  self._zzj_xueli_yuan),
-            ('在职学位',  self._zzj_xuewei),
-            ('在职院校',  self._zzj_xuewei_yuan),
-        ]:
-            col.addWidget(_row(lbl_text, w))
+        for w in self._build_lb_edu_section(_sec, _row):
+            col.addWidget(w)
 
-        # ── 职务
         col.addWidget(_sec('职务'))
         for lbl_text, w in [
             ('现任职务', self._xian_ren),
@@ -293,27 +302,16 @@ class _DocPane(QWidget):
         ]:
             col.addWidget(_row(lbl_text, w))
 
-        # ── 简历
         col.addWidget(_sec('简历'))
         col.addWidget(self._jian_li, 1)
-
-        # ── 奖惩
         col.addWidget(_sec('奖惩情况'))
         col.addWidget(self._jiang_cheng)
-
-        # ── 年度考核
         col.addWidget(_sec('年度考核结果'))
         col.addWidget(self._nian_du)
-
-        # ── 任免理由
         col.addWidget(_sec('任免理由'))
         col.addWidget(self._ren_mian)
-
-        # ── 家庭主要成员
         col.addWidget(_sec('家庭主要成员'))
         col.addWidget(self._family, 1)
-
-        # ── 其他信息
         col.addWidget(_sec('其他信息'))
         for lbl_text, w in [
             ('呈报单位',  self._cheng_bao),
@@ -849,44 +847,16 @@ class EditorTab(QWidget):
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(slot)
 
-    def _build_toolbar(self) -> QWidget:
-        bar = QWidget()
-        bar.setObjectName('editorToolbar')
-        bar.setFixedHeight(36)
-        lay = QHBoxLayout(bar)
-        lay.setContentsMargins(10, 4, 10, 4)
-        lay.setSpacing(6)
-
-        self._path_lbl = QLabel('未打开文件')
-        self._path_lbl.setStyleSheet('color: #888; font-size: 11px;')
-        lay.addWidget(self._path_lbl, 1)
-
-        def _btn(text: str, tooltip: str = '') -> QPushButton:
-            b = QPushButton(text)
-            b.setFixedHeight(26)
-            if tooltip:
-                b.setToolTip(tooltip)
-            return b
-
-        def _sep() -> QFrame:
-            f = QFrame()
-            f.setFrameShape(QFrame.Shape.VLine)
-            f.setFrameShadow(QFrame.Shadow.Sunken)
-            f.setFixedHeight(18)
-            f.setStyleSheet('color: #D0CEC8;')
-            return f
-
-        self._open_btn   = _btn('打开', '打开 lrmx 文件（可多选）')
-
-        self._save_btn   = _btn('保存', '保存当前文件')
+    def _build_toolbar_file_area(self, btn) -> list:
+        """返回文件操作按钮区 widget 列表。btn 为按钮构造函数。"""
+        self._open_btn   = btn('打开', '打开 lrmx 文件（可多选）')
+        self._save_btn   = btn('保存', '保存当前文件')
         self._save_btn.setObjectName('primary')
-        self._saveas_btn = _btn('另存为…', '另存为新文件')
-
-        self._export_btn = _btn('导出 PDF', '导出为 PDF 文件')
+        self._saveas_btn = btn('另存为…', '另存为新文件')
+        self._export_btn = btn('导出 PDF', '导出为 PDF 文件')
         self._export_btn.setObjectName('secondary')
-        self._print_btn  = _btn('打印', '打印预览并打印')
-
-        self._close_btn  = _btn('关闭', '关闭当前标签页')
+        self._print_btn  = btn('打印', '打印预览并打印')
+        self._close_btn  = btn('关闭', '关闭当前标签页')
 
         self._open_btn.clicked.connect(self._on_open_btn)
         self._save_btn.clicked.connect(self._on_save_btn)
@@ -895,22 +865,25 @@ class EditorTab(QWidget):
         self._print_btn.clicked.connect(self._on_print_btn)
         self._close_btn.clicked.connect(lambda: self._close_tab(self._tabs.currentIndex()))
 
-        lay.addWidget(self._open_btn)
-        lay.addWidget(_sep())
-        lay.addWidget(self._save_btn)
-        lay.addWidget(self._saveas_btn)
-        lay.addWidget(_sep())
-        lay.addWidget(self._export_btn)
-        lay.addWidget(self._print_btn)
-        lay.addWidget(_sep())
-        lay.addWidget(self._close_btn)
-
         for b in [self._save_btn, self._saveas_btn, self._export_btn,
                   self._print_btn, self._close_btn]:
             b.setEnabled(False)
 
-        # 布局切换分段控件
-        lay.addSpacing(10)
+        def sep():
+            f = QFrame()
+            f.setFrameShape(QFrame.Shape.VLine)
+            f.setFrameShadow(QFrame.Shadow.Sunken)
+            f.setFixedHeight(18)
+            f.setStyleSheet('color: #D0CEC8;')
+            return f
+
+        return [self._open_btn, sep(),
+                self._save_btn, self._saveas_btn, sep(),
+                self._export_btn, self._print_btn, sep(),
+                self._close_btn]
+
+    def _build_toolbar_layout_toggle(self) -> list:
+        """返回布局切换按钮区的 widget 列表。"""
         self._layout_b_btn = QPushButton('轻量')
         self._layout_b_btn.setObjectName('layoutToggleL')
         self._layout_b_btn.setFixedHeight(24)
@@ -931,8 +904,33 @@ class EditorTab(QWidget):
         self._layout_b_btn.setChecked(current_mode == 'b')
         self._layout_a_btn.setChecked(current_mode == 'a')
 
-        lay.addWidget(self._layout_b_btn)
-        lay.addWidget(self._layout_a_btn)
+        return [self._layout_b_btn, self._layout_a_btn]
+
+    def _build_toolbar(self) -> QWidget:
+        bar = QWidget()
+        bar.setObjectName('editorToolbar')
+        bar.setFixedHeight(36)
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(10, 4, 10, 4)
+        lay.setSpacing(6)
+
+        self._path_lbl = QLabel('未打开文件')
+        self._path_lbl.setStyleSheet('color: #888; font-size: 11px;')
+        lay.addWidget(self._path_lbl, 1)
+
+        def _btn(text: str, tooltip: str = '') -> QPushButton:
+            b = QPushButton(text)
+            b.setFixedHeight(26)
+            if tooltip:
+                b.setToolTip(tooltip)
+            return b
+
+        for w in self._build_toolbar_file_area(_btn):
+            lay.addWidget(w)
+
+        lay.addSpacing(10)
+        for w in self._build_toolbar_layout_toggle():
+            lay.addWidget(w)
 
         return bar
 
