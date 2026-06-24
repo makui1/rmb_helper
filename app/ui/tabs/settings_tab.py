@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -7,11 +8,14 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
     QDialog, QLineEdit, QRadioButton, QButtonGroup,
 )
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, QSize
+from PySide6.QtGui import QIcon
 from app.utils.naming import PRESETS
 from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
 from app.core import file_assoc
 from app.core.compare_rules import CompareRule, rules_to_json, rules_from_json, validate_date_format, validate_regex_pattern
+
+_ASSETS = Path(__file__).parent.parent / 'assets'
 
 
 class _CompareRuleDialog(QDialog):
@@ -54,7 +58,7 @@ class _CompareRuleDialog(QDialog):
         dv = QVBoxLayout(self._date_widget)
         dv.setContentsMargins(0, 0, 0, 0)
         dv.setSpacing(4)
-        hint_lbl = QLabel('等价格式列表（双击编辑，点 + 新增）')
+        hint_lbl = QLabel('等价格式列表（双击编辑，点 ＋ 新增）')
         hint_lbl.setStyleSheet('color: #555; font-size: 12px;')
         dv.addWidget(hint_lbl)
 
@@ -65,10 +69,16 @@ class _CompareRuleDialog(QDialog):
         fmt_row.addWidget(self._fmt_list, 1)
 
         fmt_btns = QVBoxLayout()
-        add_fmt_btn = QPushButton('+')
+        add_fmt_btn = QPushButton()
+        add_fmt_btn.setIcon(QIcon(str(_ASSETS / 'add-btn.svg')))
+        add_fmt_btn.setIconSize(QSize(16, 16))
+        add_fmt_btn.setToolTip('新增格式')
         add_fmt_btn.setFixedSize(28, 28)
         add_fmt_btn.clicked.connect(self._add_format)
-        del_fmt_btn = QPushButton('−')
+        del_fmt_btn = QPushButton()
+        del_fmt_btn.setIcon(QIcon(str(_ASSETS / 'delete-btn.svg')))
+        del_fmt_btn.setIconSize(QSize(16, 16))
+        del_fmt_btn.setToolTip('删除格式')
         del_fmt_btn.setFixedSize(28, 28)
         del_fmt_btn.clicked.connect(self._del_format)
         fmt_btns.addWidget(add_fmt_btn)
@@ -300,14 +310,26 @@ class SettingsTab(QWidget):
         layout.addWidget(self._compare_rule_list)
 
         rule_btn_row = QHBoxLayout()
-        self._add_cr_btn = QPushButton('新增')
+        self._add_cr_btn = QPushButton()
+        self._add_cr_btn.setIcon(QIcon(str(_ASSETS / 'add-btn.svg')))
+        self._add_cr_btn.setIconSize(QSize(16, 16))
+        self._add_cr_btn.setToolTip('新增规则')
+        self._add_cr_btn.setFixedSize(28, 28)
         self._add_cr_btn.clicked.connect(self._add_compare_rule)
-        self._edit_cr_btn = QPushButton('编辑')
-        self._edit_cr_btn.clicked.connect(self._edit_compare_rule)
+        self._edit_cr_btn = QPushButton()
+        self._edit_cr_btn.setIcon(QIcon(str(_ASSETS / 'edit.svg')))
+        self._edit_cr_btn.setIconSize(QSize(16, 16))
+        self._edit_cr_btn.setToolTip('编辑规则')
+        self._edit_cr_btn.setFixedSize(28, 28)
         self._edit_cr_btn.setEnabled(False)
-        self._del_cr_btn = QPushButton('删除')
-        self._del_cr_btn.clicked.connect(self._delete_compare_rule)
+        self._edit_cr_btn.clicked.connect(self._edit_compare_rule)
+        self._del_cr_btn = QPushButton()
+        self._del_cr_btn.setIcon(QIcon(str(_ASSETS / 'delete-btn.svg')))
+        self._del_cr_btn.setIconSize(QSize(16, 16))
+        self._del_cr_btn.setToolTip('删除规则')
+        self._del_cr_btn.setFixedSize(28, 28)
         self._del_cr_btn.setEnabled(False)
+        self._del_cr_btn.clicked.connect(self._delete_compare_rule)
         rule_btn_row.addWidget(self._add_cr_btn)
         rule_btn_row.addWidget(self._edit_cr_btn)
         rule_btn_row.addWidget(self._del_cr_btn)

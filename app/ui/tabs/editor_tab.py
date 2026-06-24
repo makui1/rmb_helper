@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QSettings
-from PySide6.QtGui import QFont, QFontMetricsF, QTextBlockFormat, QTextCursor
+from PySide6.QtGui import QFont, QFontMetricsF, QTextBlockFormat, QTextCursor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QLineEdit, QComboBox, QTextEdit,
@@ -825,6 +825,19 @@ class EditorTab(QWidget):
         right_lay.addWidget(self._tabs, 1)
         root.addWidget(right, 1)
 
+        shortcuts = [
+            ('Ctrl+O',       self._on_open_btn),
+            ('Ctrl+S',       self._on_save_btn),
+            ('Ctrl+Shift+S', self._on_saveas_btn),
+            ('Ctrl+W',       lambda: self._close_tab(self._tabs.currentIndex())),
+            ('Ctrl+P',       self._on_print_btn),
+            ('Ctrl+Shift+P', self._on_export_pdf),
+        ]
+        for key, slot in shortcuts:
+            sc = QShortcut(QKeySequence(key), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(slot)
+
     def _build_toolbar(self) -> QWidget:
         bar = QWidget()
         bar.setObjectName('editorToolbar')
@@ -1058,8 +1071,11 @@ class EditorTab(QWidget):
                 QMessageBox.warning(self, '无法导出',
                     '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
                 return
-            xing_ming = lrmx.get('XingMing') or '未命名'
-            default_name = f'{xing_ming}_任免审批表.pdf'
+            cp = pane.current_path()
+            if cp:
+                default_name = Path(cp).stem + '.pdf'
+            else:
+                default_name = (lrmx.get('XingMing') or '未命名') + '_任免审批表.pdf'
             dest, _ = QFileDialog.getSaveFileName(
                 self, '导出 PDF', default_name, 'PDF 文件 (*.pdf)')
             if not dest:
