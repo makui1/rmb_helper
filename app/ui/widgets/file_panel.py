@@ -6,8 +6,10 @@ from PySide6.QtWidgets import (
     QFileDialog, QMenu, QDialog, QProgressBar,
     QStyledItemDelegate, QStyle, QFrame,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QTimer, QModelIndex, QRect
+from PySide6.QtCore import Qt, Signal, QSize, QEvent, QTimer, QModelIndex, QRect
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
+
+from app.ui.workers import BaseWorker
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
@@ -15,14 +17,14 @@ _ACCENT       = QColor('#D85A30')
 _ACCENT_LIGHT = QColor(216, 90, 48, 26)   # rgba(216,90,48,0.10)
 
 
-class _FolderScanWorker(QThread):
+class _FolderScanWorker(BaseWorker):
     done = Signal(list)
 
     def __init__(self, folder: str, parent=None):
         super().__init__(parent)
         self._folder = folder
 
-    def run(self):
+    def work(self):
         paths = sorted(str(p) for p in Path(self._folder).rglob('*.lrmx'))
         self.done.emit(paths)
 
