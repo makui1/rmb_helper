@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QScrollArea, QSpinBox, QLayout,
     QDialog, QGridLayout, QComboBox,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent, QRect, QPoint, QTimer
+from PySide6.QtCore import Qt, Signal, QSize, QEvent, QRect, QPoint, QTimer
+from app.ui.workers import BaseWorker
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
 from app.ui.widgets.file_panel import LrmxFilePanel
 
@@ -238,7 +239,7 @@ class _DiffPanel(QWidget):
 
 
 
-class _VerifyWorker(QThread):
+class _VerifyWorker(BaseWorker):
     result_ready = Signal(object)
     finished = Signal()
 
@@ -256,21 +257,12 @@ class _VerifyWorker(QThread):
         self.finished.emit()
 
 
-class _UpdateWorker(QThread):
-    log = Signal(str)
-    critical = Signal(str)
+class _UpdateWorker(BaseWorker):
     finished = Signal()
+    # log 由 BaseWorker 声明；critical 重命名为 BaseWorker.error
 
-    def __init__(
-        self,
-        handler,
-        field_mapping: dict,
-        fields_to_write: list,
-        header_row: int,
-        match_excel_col_for_id,
-        match_excel_col_for_name,
-        parent=None,
-    ):
+    def __init__(self, handler, field_mapping, fields_to_write,
+                 header_row, match_excel_col_for_id, match_excel_col_for_name, parent=None):
         super().__init__(parent)
         self._handler = handler
         self._field_mapping = field_mapping
@@ -279,18 +271,15 @@ class _UpdateWorker(QThread):
         self._id_col = match_excel_col_for_id
         self._name_col = match_excel_col_for_name
 
-    def run(self):
-        try:
-            self._handler.update(
-                field_mapping=self._field_mapping,
-                fields_to_write=self._fields_to_write,
-                header_row=self._header_row,
-                match_excel_col_for_id=self._id_col,
-                match_excel_col_for_name=self._name_col,
-                progress_cb=self.log.emit,
-            )
-        except Exception as e:
-            self.critical.emit(str(e))
+    def work(self):
+        self._handler.update(
+            field_mapping=self._field_mapping,
+            fields_to_write=self._fields_to_write,
+            header_row=self._header_row,
+            match_excel_col_for_id=self._id_col,
+            match_excel_col_for_name=self._name_col,
+            progress_cb=self.log.emit,
+        )
         self.finished.emit()
 
 
@@ -1340,7 +1329,7 @@ class VerifyTab(QWidget):
             match_excel_col_for_name=name_col,
         )
         self._update_worker.log.connect(self._on_update_log)
-        self._update_worker.critical.connect(self._on_update_critical)
+        self._update_worker.error.connect(self._on_update_critical)
         self._update_worker.finished.connect(self._on_update_finished)
         self.busy_changed.emit(True)
         self._update_worker.start()
@@ -1414,7 +1403,7 @@ class VerifyTab(QWidget):
         self._update_loading_overlay.hide()
         if self._update_worker and self._update_worker.isRunning():
             self._update_worker.log.disconnect()
-            self._update_worker.critical.disconnect()
+            self._update_worker.error.disconnect()
             self._update_worker.finished.disconnect()
         self._setup_panel.show()
         self._back_btn.setText('← 重新配置')
