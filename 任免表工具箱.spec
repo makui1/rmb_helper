@@ -91,5 +91,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['app\\ui\\assets\\icon.ico'],
+    icon=['app\\ui\\assets\\rmb.ico'],
 )
