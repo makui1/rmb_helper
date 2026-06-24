@@ -9,26 +9,9 @@ from PySide6.QtGui import QIcon
 
 from app.core.compare_rules import CompareRule
 from app.ui.widgets.flow_layout import _FlowLayout, _MatchTag
+from app.ui.widgets.update_log import _HoverIconButton
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
-
-
-# 临时定义，Task 10 完成后改为从 app.ui.widgets.update_log 导入
-class _HoverIconButton(QPushButton):
-    def __init__(self, icon_normal: QIcon, icon_hover: QIcon, parent=None):
-        super().__init__(parent)
-        self._icon_normal = icon_normal
-        self._icon_hover = icon_hover
-        self.setIcon(icon_normal)
-        self.setStyleSheet("border:None;")
-
-    def enterEvent(self, event):
-        self.setIcon(self._icon_hover)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self.setIcon(self._icon_normal)
-        super().leaveEvent(event)
 
 
 class _NoScrollCombo(QComboBox):
