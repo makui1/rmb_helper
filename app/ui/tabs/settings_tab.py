@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QInputDialog, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
     QDialog, QLineEdit, QRadioButton, QButtonGroup,
+    QPlainTextEdit,
 )
 from PySide6.QtCore import QSettings, Qt, QSize
 from PySide6.QtGui import QIcon
@@ -14,6 +15,7 @@ from app.utils.naming import PRESETS
 from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
 from app.core import file_assoc
 from app.core.compare_rules import CompareRule, rules_to_json, rules_from_json, validate_date_format, validate_regex_pattern
+from app.core.converters import get_all_converters, save_custom_converters, execute_converter
 from app.ui.utils import show_error, show_warning
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
@@ -337,6 +339,104 @@ class SettingsTab(QWidget):
         rule_btn_row.addStretch()
         layout.addLayout(rule_btn_row)
 
+        # ── 转换器管理 ──────────────────────────────────────────────────────
+        sep_conv = QFrame()
+        sep_conv.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(sep_conv)
+
+        conv_title = QLabel('转换器管理')
+        conv_title.setObjectName('sectionTitle')
+        layout.addWidget(conv_title)
+
+        conv_sub = QLabel(
+            'LRMX→Excel 更新时可选用转换器对字段值进行格式转换。'
+            '内置转换器不可编辑删除。自定义转换器可编写 Python 代码。'
+        )
+        conv_sub.setStyleSheet('color: #888880; font-size: 12px;')
+        conv_sub.setWordWrap(True)
+        layout.addWidget(conv_sub)
+
+        self._converter_list = QListWidget()
+        self._converter_list.setMaximumHeight(120)
+        self._converter_list.currentRowChanged.connect(self._on_converter_selected)
+        layout.addWidget(self._converter_list)
+
+        conv_btn_row = QHBoxLayout()
+        self._add_conv_btn = QPushButton('新建')
+        self._add_conv_btn.clicked.connect(self._add_converter)
+        self._edit_conv_btn = QPushButton('编辑')
+        self._edit_conv_btn.setEnabled(False)
+        self._edit_conv_btn.clicked.connect(self._edit_converter)
+        self._del_conv_btn = QPushButton('删除')
+        self._del_conv_btn.setEnabled(False)
+        self._del_conv_btn.clicked.connect(self._delete_converter)
+        conv_btn_row.addWidget(self._add_conv_btn)
+        conv_btn_row.addWidget(self._edit_conv_btn)
+        conv_btn_row.addWidget(self._del_conv_btn)
+        conv_btn_row.addStretch()
+        layout.addLayout(conv_btn_row)
+
+        # 编辑面板（初始隐藏）
+        self._conv_editor = QWidget()
+        self._conv_editor.hide()
+        ev = QVBoxLayout(self._conv_editor)
+        ev.setContentsMargins(0, 8, 0, 0)
+        ev.setSpacing(6)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel('名称'))
+        self._conv_name_edit = QLineEdit()
+        name_row.addWidget(self._conv_name_edit)
+        ev.addLayout(name_row)
+
+        code_label = QLabel('代码（必须定义 convert(value: str) -> str 函数）')
+        ev.addWidget(code_label)
+
+        self._conv_code_edit = QPlainTextEdit()
+        self._conv_code_edit.setPlaceholderText(
+            'def convert(value: str) -> str:\n'
+            '    # 在此编写转换逻辑\n'
+            '    return value'
+        )
+        self._conv_code_edit.setMinimumHeight(120)
+        self._conv_code_edit.setStyleSheet(
+            'font-family: "Cascadia Code", "Consolas", monospace; font-size: 13px;'
+        )
+        ev.addWidget(self._conv_code_edit)
+
+        # 测试行
+        test_row = QHBoxLayout()
+        test_row.addWidget(QLabel('测试'))
+        self._conv_test_input = QLineEdit()
+        self._conv_test_input.setPlaceholderText('输入测试值…')
+        self._conv_test_input.textChanged.connect(self._on_converter_test)
+        test_row.addWidget(self._conv_test_input, 1)
+        test_row.addWidget(QLabel('→'))
+        self._conv_test_result = QLabel('（结果）')
+        self._conv_test_result.setStyleSheet('color: #1E7A3A; font-weight: bold;')
+        test_row.addWidget(self._conv_test_result)
+        ev.addLayout(test_row)
+
+        # 错误提示
+        self._conv_error_lbl = QLabel('')
+        self._conv_error_lbl.setStyleSheet('color: #B02020; font-size: 11px;')
+        self._conv_error_lbl.hide()
+        ev.addWidget(self._conv_error_lbl)
+
+        # 保存/取消
+        conv_save_row = QHBoxLayout()
+        conv_save_row.addStretch()
+        self._conv_cancel_btn = QPushButton('取消')
+        self._conv_cancel_btn.clicked.connect(self._cancel_converter_edit)
+        self._conv_save_btn = QPushButton('保存')
+        self._conv_save_btn.setObjectName('primary')
+        self._conv_save_btn.clicked.connect(self._save_converter)
+        conv_save_row.addWidget(self._conv_cancel_btn)
+        conv_save_row.addWidget(self._conv_save_btn)
+        ev.addLayout(conv_save_row)
+
+        layout.addWidget(self._conv_editor)
+
         layout.addStretch()
 
     def _refresh_assoc_btn(self):
@@ -406,6 +506,8 @@ class SettingsTab(QWidget):
         self._compare_rules: list[CompareRule] = rules_from_json(raw_cr)
         self._refresh_compare_rule_list()
 
+        self._load_converters()
+
     def _save(self):
         rules = [self._rule_list.item(i).text() for i in range(self._rule_list.count())]
         self._settings.setValue('naming_rules', rules)
@@ -467,3 +569,127 @@ class SettingsTab(QWidget):
             self._compare_rules.pop(row)
             self._refresh_compare_rule_list()
             self._settings.setValue('compare_rules', rules_to_json(self._compare_rules))
+
+    # ── 转换器管理 ────────────────────────────────────────────────────────
+
+    def _load_converters(self):
+        self._custom_converters: list[dict] = get_all_converters(self._settings)
+        self._editing_converter_index: int | None = None
+        self._refresh_converter_list()
+
+    def _refresh_converter_list(self):
+        self._converter_list.clear()
+        for c in self._custom_converters:
+            prefix = '🔒 ' if c.get('builtin') else '✏ '
+            self._converter_list.addItem(f'{prefix}{c["name"]}')
+        self._on_converter_selected(self._converter_list.currentRow())
+
+    def _on_converter_selected(self, row: int):
+        if row < 0:
+            self._edit_conv_btn.setEnabled(False)
+            self._del_conv_btn.setEnabled(False)
+            return
+        is_builtin = self._custom_converters[row].get('builtin', False)
+        self._edit_conv_btn.setEnabled(not is_builtin)
+        self._del_conv_btn.setEnabled(not is_builtin)
+
+    def _add_converter(self):
+        self._editing_converter_index = None
+        self._conv_name_edit.clear()
+        self._conv_code_edit.setPlainText(
+            'def convert(value: str) -> str:\n'
+            '    # 在此编写转换逻辑\n'
+            '    return value'
+        )
+        self._conv_test_input.clear()
+        self._conv_test_result.setText('（结果）')
+        self._conv_error_lbl.hide()
+        self._conv_editor.show()
+
+    def _edit_converter(self):
+        row = self._converter_list.currentRow()
+        if row < 0:
+            return
+        c = self._custom_converters[row]
+        if c.get('builtin'):
+            return
+        self._editing_converter_index = row
+        self._conv_name_edit.setText(c['name'])
+        self._conv_code_edit.setPlainText(c['code'])
+        self._conv_test_input.clear()
+        self._conv_test_result.setText('（结果）')
+        self._conv_error_lbl.hide()
+        self._conv_editor.show()
+
+    def _delete_converter(self):
+        row = self._converter_list.currentRow()
+        if row < 0:
+            return
+        c = self._custom_converters[row]
+        if c.get('builtin'):
+            return
+        reply = QMessageBox.question(
+            self, '确认删除', f'确定删除转换器「{c["name"]}」吗？',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._custom_converters.pop(row)
+            self._persist_converters()
+            self._refresh_converter_list()
+            self._conv_editor.hide()
+
+    def _save_converter(self):
+        name = self._conv_name_edit.text().strip()
+        code = self._conv_code_edit.toPlainText().strip()
+        if not name:
+            self._conv_error_lbl.setText('名称不能为空')
+            self._conv_error_lbl.show()
+            return
+        if not code:
+            self._conv_error_lbl.setText('代码不能为空')
+            self._conv_error_lbl.show()
+            return
+        if 'def convert' not in code:
+            self._conv_error_lbl.setText('代码中必须包含 def convert 函数定义')
+            self._conv_error_lbl.show()
+            return
+        # 验证语法
+        try:
+            compile(code, '<converter>', 'exec')
+        except SyntaxError as e:
+            self._conv_error_lbl.setText(f'语法错误: {e}')
+            self._conv_error_lbl.show()
+            return
+
+        conv = {'name': name, 'code': code, 'builtin': False}
+        if self._editing_converter_index is not None:
+            self._custom_converters[self._editing_converter_index] = conv
+        else:
+            self._custom_converters.append(conv)
+        self._persist_converters()
+        self._refresh_converter_list()
+        self._conv_editor.hide()
+        self._conv_error_lbl.hide()
+
+    def _cancel_converter_edit(self):
+        self._conv_editor.hide()
+        self._conv_error_lbl.hide()
+
+    def _persist_converters(self):
+        save_custom_converters(self._settings, self._custom_converters)
+
+    def _on_converter_test(self, text: str):
+        if not text:
+            self._conv_test_result.setText('（结果）')
+            self._conv_test_result.setStyleSheet('color: #1E7A3A; font-weight: bold;')
+            return
+        code = self._conv_code_edit.toPlainText().strip()
+        if not code:
+            return
+        try:
+            result = execute_converter(code, text)
+            self._conv_test_result.setText(result)
+            self._conv_test_result.setStyleSheet('color: #1E7A3A; font-weight: bold;')
+        except Exception as e:
+            self._conv_test_result.setText(f'错误: {e}')
+            self._conv_test_result.setStyleSheet('color: #B02020;')
