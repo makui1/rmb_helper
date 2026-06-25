@@ -74,15 +74,8 @@ _XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
 _ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
 _ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
 
-# Fields whose cells should get the same height-aware font-shrink treatment as JianLi.
-_PLAIN_SHRINK_KEYS: tuple[str, ...] = (
-    'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',   # 全日制学历毕业院校系及专业
-    'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',  # 全日制学位毕业院校系及专业
-    'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',       # 在职学历毕业院校系及专业
-    'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',     # 在职学位毕业院校系及专业
-    'XianRenZhiWu',                             # 现任职务
-    'JiangChengQingKuang',                      # 奖惩情况
-)
+# Keys excluded from plain-cell font-shrink (handled elsewhere or non-text).
+_PLAIN_SHRINK_SKIP_KEYS = frozenset({'JianLi', 'ZhaoPian'})
 
 # Matches all whitespace variants + invisible Unicode chars
 _INVIS = re.compile(r'[\s​‌‍﻿ 　]+')
@@ -390,12 +383,12 @@ class DocxExporter:
         for i in range(MAX_FAMILY_SLOTS):
             ctx[f'm{i}'] = family[i] if i < len(family) else dict(_EMPTY_MEMBER)
 
-        # 收集待收缩的纯文本单元格内容
+        # 收集所有待收缩的纯文本字段（排除单独处理的 JianLi/ZhaoPian）
         self._plain_cell_shrink = [
             t for t in (
                 _html.unescape(ctx[k]).strip()
-                for k in _PLAIN_SHRINK_KEYS
-                if isinstance(ctx.get(k), str)
+                for k in ctx
+                if k not in _PLAIN_SHRINK_SKIP_KEYS and isinstance(ctx.get(k), str)
             )
             if t
         ]
