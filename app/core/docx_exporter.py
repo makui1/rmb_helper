@@ -154,6 +154,77 @@ def _format_retire_age(value: str, birth_ym6: str) -> str:
     return formatted
 
 
+# ── 改革后退休年龄计算（2025-01-01 起实施） ───────────────────────────────────
+
+def _parse_reform_age(gai_ge_qian: str) -> int | None:
+    """从 GaiGeQianRenZhiNianLingJieXian 解析原退休年龄。
+
+    Returns:
+        原退休年龄（int），或 None（已到龄人员/无法解析）。
+    """
+    v = _INVIS.sub('', gai_ge_qian).strip()
+    m = re.search(r'(\d+)岁', v)
+    return int(m.group(1)) if m else None
+
+
+def _calc_reform_retire_age(birth_ym: str, original_age: int) -> tuple[str | None, int, int]:
+    """基于 2025 年改革政策计算到龄年月及精确退休年龄。
+
+    改革规则（2025-01-01 起实施）：
+      - 原 60 岁（男职工）：每 4 月延 1 月，最多 36 月 → 目标 63 岁
+      - 原 55 岁（女干部）：每 4 月延 1 月，最多 36 月 → 目标 58 岁
+      - 原 50 岁（女工人）：每 2 月延 1 月，最多 60 月 → 目标 55 岁
+      - 原 63/65/66 岁：维持不变
+
+    Returns:
+        (retire_ym, age_years, age_months)
+        retire_ym 格式 yyyyMM；计算失败返回 (None, 0, 0)。
+    """
+    if not re.fullmatch(r'\d{6}', birth_ym):
+        return None, 0, 0
+
+    b_year, b_month = int(birth_ym[:4]), int(birth_ym[4:])
+
+    # 原到龄年月（月份从 1 开始）
+    orig_ym = (b_year + original_age) * 12 + b_month
+    REFORM_YM = 2025 * 12 + 1  # 2025 年 1 月
+
+    if orig_ym < REFORM_YM:
+        delay = 0   # 改革前已到龄
+    elif original_age == 50:
+        n = orig_ym - REFORM_YM + 1
+        delay = min((n - 1) // 2 + 1, 60)
+    elif original_age in (55, 60):
+        n = orig_ym - REFORM_YM + 1
+        delay = min((n - 1) // 4 + 1, 36)
+    else:
+        delay = 0   # 63/65/66 维持不变
+
+    # 实际到龄年月
+    total = orig_ym + delay
+    retire_year = (total - 1) // 12
+    retire_month = (total - 1) % 12 + 1
+    retire_ym = f'{retire_year:04d}{retire_month:02d}'
+
+    # 精确年龄（年 + 月）
+    birth_total = b_year * 12 + b_month
+    age_total = total - birth_total
+    age_y = age_total // 12
+    age_m = age_total % 12
+
+    return retire_ym, age_y, age_m
+
+
+def _format_reform_retire(retire_ym: str, age_y: int, age_m: int) -> str:
+    """格式化到龄年月为 'yyyy.MM\\n（x岁y个月）'。
+    当 y=0 时只显示 'x岁'。
+    """
+    formatted = _format_time6(retire_ym)
+    if age_m == 0:
+        return f'{formatted}\n（{age_y}岁）'
+    return f'{formatted}\n（{age_y}岁{age_m}个月）'
+
+
 def _format_jianli_list(text: str) -> list[str]:
     """Normalize each JianLi line to 'yyyy.MM--[yyyy.MM]<TAB>experience'.
 
@@ -325,11 +396,26 @@ class DocxExporter:
             return out.read_bytes()
 
     def _ctx_time_fields(self, raw: dict) -> dict:
-        """格式化出生、到龄、六位/八位时间字段。"""
+        """格式化出生、到龄（基于改革政策计算）、六位/八位时间字段。"""
         birth_ym = _INVIS.sub('', raw.get('ChuShengNianYue', ''))
         ctx: dict = {}
         ctx['ChuShengNianYue'] = _format_birth(raw.get('ChuShengNianYue', ''))
-        ctx['DaoLingNianYue']  = _format_retire_age(raw.get('DaoLingNianYue', ''), birth_ym)
+
+        # 退休时间：优先基于 GaiGeQianRenZhiNianLingJieXian + 改革政策计算
+        gai_ge_qian = raw.get('GaiGeQianRenZhiNianLingJieXian', '')
+        original_age = _parse_reform_age(gai_ge_qian)
+        if original_age is not None:
+            retire_ym, age_y, age_m = _calc_reform_retire_age(birth_ym, original_age)
+            if retire_ym:
+                ctx['DaoLingNianYue'] = _format_reform_retire(retire_ym, age_y, age_m)
+            else:
+                ctx['DaoLingNianYue'] = _format_retire_age(
+                    raw.get('DaoLingNianYue', ''), birth_ym)
+        else:
+            # 已到龄人员或无法解析：使用原有 DaoLingNianYue
+            ctx['DaoLingNianYue'] = _format_retire_age(
+                raw.get('DaoLingNianYue', ''), birth_ym)
+
         for key in _TIME6_FIELDS:
             ctx[key] = _format_time6(raw.get(key, ''))
         for key in _TIME8_FIELDS:
