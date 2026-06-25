@@ -1,3 +1,4 @@
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
@@ -62,11 +63,17 @@ class LrmxFile:
 
         递归遍历 XML 树，对无子元素且文本为空（或纯空白）的标签，
         将其 text 设为 None，使得序列化时输出 <tag/> 而非 <tag></tag>。
+        同时清理姓名字段中多余的空格（如 "张 三" → "张三"）。
         """
         def _norm(elem):
             if len(elem) == 0:
                 if elem.text is not None and not elem.text.strip():
                     elem.text = None
+                elif elem.tag == 'XingMing' and elem.text:
+                    # 删除姓名中的多余空格（如 "张 三" → "张三"）
+                    stripped = re.sub(r'\s+', '', elem.text)
+                    if stripped != elem.text:
+                        elem.text = stripped
             else:
                 for child in elem:
                     _norm(child)
