@@ -305,6 +305,7 @@ class DocxExporter:
         self._jianli_line_count: int = 0
         self._jianli_lines: list[str] = []
         self._plain_cell_shrink: list[str] = []
+        self._edu_merge_xueli_texts: list[str] = []
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
         from docxtpl import DocxTemplate
@@ -378,6 +379,18 @@ class DocxExporter:
         ctx.update(self._ctx_plain_fields(raw, SPECIAL_KEYS))
         ctx.update(self._ctx_time_fields(raw))
         ctx.update(self._ctx_education_fields(raw))
+
+        # 收集学位为空的学历文本（用于后续纵向合并单元格）
+        self._edu_merge_xueli_texts = []
+        for xueli_key, xuewei_key in [
+            (_XUELI_KEY, _XUEWEI_KEY),
+            (_ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY),
+        ]:
+            x_v = ctx.get(xueli_key, '').strip()
+            xw_v = ctx.get(xuewei_key, '').strip()
+            if x_v and not xw_v:
+                self._edu_merge_xueli_texts.append(x_v)
+
         ctx['ZhaoPian'] = self._decode_photo(raw.get('ZhaoPian', ''), tpl)
 
         # JianLi
@@ -409,7 +422,8 @@ class DocxExporter:
     def _post_process(self, path: Path) -> None:
         from docx import Document as DocxDoc
         doc = DocxDoc(path)
-        changed = self._shrink_overflow_cells(doc)
+        changed = self._merge_empty_degree_cells(doc)
+        changed |= self._shrink_overflow_cells(doc)
         changed |= self._shrink_xueli_cell(doc)
         changed |= self._shrink_jianli_cell(doc)
         changed |= self._shrink_plain_cells(doc)
@@ -684,6 +698,90 @@ class DocxExporter:
                         para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
                         para.paragraph_format.line_spacing = Pt(target_sp_pt)
                         changed = True
+
+        return changed
+
+    def _merge_empty_degree_cells(self, doc) -> bool:
+        """当学位为空时，将学历单元格与下方的空学位单元格纵向合并并居中。
+
+        扫描所有表格，找到学历文本所在的单元格，检查其正下方同行列的
+        单元格是否为空（即学位无数据），若是则通过 vMerge 合并二者，
+        并将合并后的单元格内容横向+纵向居中。
+        """
+        if not self._edu_merge_xueli_texts:
+            return False
+
+        from lxml import etree
+
+        target_set = set(self._edu_merge_xueli_texts)
+        changed = False
+
+        for table in doc.tables:
+            tbl = table._tbl
+            trs = tbl.findall(f'{{{_W}}}tr')
+
+            for tr_idx, tr in enumerate(trs):
+                for tc in list(tr.findall(f'{{{_W}}}tc')):
+                    # 获取单元格内所有文本
+                    cell_text = ''.join(
+                        (node.text or '')
+                        for node in tc.iter(f'{{{_W}}}t')
+                    ).strip()
+
+                    if not cell_text or cell_text not in target_set:
+                        continue
+
+                    # 找到学历值单元格 → 确定其网格列
+                    col = _grid_col_of(tr, tc)
+
+                    # 在下方行中找同列单元格（学位单元格）
+                    for next_tr in trs[tr_idx + 1:]:
+                        next_tc = _tc_at_grid_col(next_tr, col)
+                        if next_tc is None:
+                            continue
+
+                        # 检查学位单元格是否为空
+                        next_text = ''.join(
+                            (node.text or '')
+                            for node in next_tc.iter(f'{{{_W}}}t')
+                        ).strip()
+
+                        if next_text:
+                            break  # 学位有内容，不合并
+
+                        # ── 对上方单元格设 vMerge restart + 居中 ──────────
+                        tc_pr = tc.find(f'{{{_W}}}tcPr')
+                        if tc_pr is None:
+                            tc_pr = etree.SubElement(tc, f'{{{_W}}}tcPr')
+
+                        vm = etree.SubElement(tc_pr, f'{{{_W}}}vMerge')
+                        vm.set(f'{{{_W}}}val', 'restart')
+
+                        # 纵向居中
+                        v_align = etree.SubElement(tc_pr, f'{{{_W}}}vAlign')
+                        v_align.set(f'{{{_W}}}val', 'center')
+
+                        # 横向居中：每个段落设 jc="center"
+                        for p in tc.findall(f'{{{_W}}}p'):
+                            pPr = p.find(f'{{{_W}}}pPr')
+                            if pPr is None:
+                                pPr = etree.Element(f'{{{_W}}}pPr')
+                                p.insert(0, pPr)
+                            jc = pPr.find(f'{{{_W}}}jc')
+                            if jc is None:
+                                jc = etree.SubElement(pPr, f'{{{_W}}}jc')
+                            jc.set(f'{{{_W}}}val', 'center')
+
+                        # ── 对下方空单元格设 vMerge continue ──────────────
+                        next_pr = next_tc.find(f'{{{_W}}}tcPr')
+                        if next_pr is None:
+                            next_pr = etree.SubElement(next_tc, f'{{{_W}}}tcPr')
+
+                        next_vm = etree.SubElement(next_pr, f'{{{_W}}}vMerge')
+                        next_vm.set(f'{{{_W}}}val', 'continue')
+
+                        changed = True
+                        break  # 只合并紧邻的第一行
 
         return changed
 
