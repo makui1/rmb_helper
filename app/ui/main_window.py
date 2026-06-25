@@ -248,9 +248,10 @@ class MainWindow(QMainWindow):
         for label, icon in [
             ('批量格式转换', 'convert.svg'),
             ('批量版本兼容', 'compat.svg'),
-            ('批量核验/更新', 'verify.svg'),
+            ('批量核验', 'verify.svg'),
             ('生成家庭关系表', 'export.svg'),
             ('任免表编辑器', 'edit.svg'),
+            ('批量更新', 'update.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
@@ -454,6 +455,9 @@ class MainWindow(QMainWindow):
             elif index == 4:
                 from app.ui.tabs.editor_tab import EditorTab
                 tab = EditorTab()
+            elif index == 5:
+                from app.ui.tabs.update_tab import UpdateTab
+                tab = UpdateTab(self._file_panel)
             else:
                 from app.ui.tabs.settings_tab import SettingsTab
                 tab = SettingsTab()
