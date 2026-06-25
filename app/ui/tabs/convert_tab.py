@@ -262,11 +262,16 @@ class ConvertTab(QWidget):
         self._run_btn.setIconSize(QSize(16, 16))
         self._run_btn.setObjectName('primary')
         self._run_btn.clicked.connect(self._run)
+        self._format_btn = QPushButton('格式化')
+        self._format_btn.setToolTip('将文件列表中所有 lrmx 的空标签转为自闭合格式')
+        self._format_btn.clicked.connect(self._on_format)
         rule_row.addWidget(rule_label)
         rule_row.addWidget(self._rule_combo)
         rule_row.addWidget(self._custom_edit)
         rule_row.addWidget(custom_btn)
         rule_row.addStretch()
+        rule_row.addWidget(self._format_btn)
+        rule_row.addSpacing(6)
         rule_row.addWidget(self._run_btn)
         bot_layout.addLayout(rule_row)
 
@@ -325,6 +330,28 @@ class ConvertTab(QWidget):
     def _on_sibling_toggled(self, checked: bool):
         self._dir_edit.setEnabled(not checked)
         self._dir_btn.setEnabled(not checked)
+
+    def _on_format(self):
+        """对文件列表中所有 lrmx 执行 XML 格式化。"""
+        files = self._file_panel.files()
+        if not files:
+            self._log.clear()
+            self._log.append('⚠ 文件列表为空，请先添加 lrmx 文件。')
+            return
+        self._log.clear()
+        ok = err = 0
+        for path in files:
+            try:
+                LrmxFile(Path(path)).normalize()
+                self._log.append(f'<span style="color:#1E7A3A;">✓</span> {Path(path).name}')
+                ok += 1
+            except Exception as e:
+                self._log.append(
+                    f'<span style="color:#B02020;">✗</span> {Path(path).name}：{e}'
+                )
+                err += 1
+        self._log.append(f'')
+        self._log.append(f'格式化完成：{ok} 成功，{err} 失败')
         if checked:
             self._chk_collect.setChecked(False)
         self._chk_collect.setEnabled(not checked)

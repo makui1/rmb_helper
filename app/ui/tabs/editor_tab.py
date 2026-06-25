@@ -855,6 +855,7 @@ class EditorTab(QWidget):
         self._saveas_btn = btn('另存为…', '另存为新文件')
         self._export_btn = btn('导出 PDF', '导出为 PDF 文件')
         self._export_btn.setObjectName('secondary')
+        self._format_btn = btn('格式化', '将 XML 空标签转为自闭合格式')
         self._print_btn  = btn('打印', '打印预览并打印')
         self._close_btn  = btn('关闭', '关闭当前标签页')
 
@@ -862,11 +863,12 @@ class EditorTab(QWidget):
         self._save_btn.clicked.connect(self._on_save_btn)
         self._saveas_btn.clicked.connect(self._on_saveas_btn)
         self._export_btn.clicked.connect(self._on_export_pdf)
+        self._format_btn.clicked.connect(self._on_format_btn)
         self._print_btn.clicked.connect(self._on_print_btn)
         self._close_btn.clicked.connect(lambda: self._close_tab(self._tabs.currentIndex()))
 
-        for b in [self._save_btn, self._saveas_btn, self._export_btn,
-                  self._print_btn, self._close_btn]:
+        for b in [self._save_btn, self._saveas_btn, self._format_btn,
+                  self._export_btn, self._print_btn, self._close_btn]:
             b.setEnabled(False)
 
         def sep():
@@ -878,7 +880,7 @@ class EditorTab(QWidget):
             return f
 
         return [self._open_btn, sep(),
-                self._save_btn, self._saveas_btn, sep(),
+                self._save_btn, self._saveas_btn, self._format_btn, sep(),
                 self._export_btn, self._print_btn, sep(),
                 self._close_btn]
 
@@ -1039,7 +1041,7 @@ class EditorTab(QWidget):
         pane = self._active_pane()
         has = pane is not None
         for b in [self._close_btn, self._save_btn, self._saveas_btn,
-                  self._export_btn, self._print_btn]:
+                  self._format_btn, self._export_btn, self._print_btn]:
             b.setEnabled(has)
         self._path_lbl.setText(
             (pane.current_path() or '新文件') if pane else '未打开文件'
@@ -1062,6 +1064,25 @@ class EditorTab(QWidget):
         pane = self._active_pane()
         if pane:
             pane.save_as()
+
+    def _on_format_btn(self) -> None:
+        pane = self._active_pane()
+        if not pane:
+            return
+        cp = pane.current_path()
+        if not cp:
+            QMessageBox.information(self, '提示', '请先保存文件再格式化。')
+            return
+        # 确保最新改动已写入磁盘
+        if not pane.save():
+            return
+        try:
+            LrmxFile(Path(cp)).normalize()
+        except Exception as e:
+            show_error(self, str(e))
+            return
+        # 重新加载以显示格式化后的内容
+        pane.load(cp)
 
     def _on_export_pdf(self) -> None:
         pane = self._active_pane()

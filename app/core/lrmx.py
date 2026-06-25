@@ -57,6 +57,22 @@ class LrmxFile:
                 child = ET.SubElement(item, key)
                 child.text = val
 
+    def normalize(self) -> None:
+        """将内容为空的叶子标签转为自闭合单标签（<tag/>），就地保存。
+
+        递归遍历 XML 树，对无子元素且文本为空（或纯空白）的标签，
+        将其 text 设为 None，使得序列化时输出 <tag/> 而非 <tag></tag>。
+        """
+        def _norm(elem):
+            if len(elem) == 0:
+                if elem.text is not None and not elem.text.strip():
+                    elem.text = None
+            else:
+                for child in elem:
+                    _norm(child)
+        _norm(self._root)
+        self.save()
+
     @classmethod
     def create_new(cls) -> 'LrmxFile':
         """创建无磁盘文件的空 LrmxFile，用于新建文档并另存为。"""
