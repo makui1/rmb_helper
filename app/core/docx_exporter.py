@@ -433,9 +433,6 @@ class DocxExporter:
         ]:
             xueli  = _INVIS.sub('', raw.get(xueli_key,  ''))
             xuewei = _INVIS.sub('', raw.get(xuewei_key, ''))
-            print(f"xueli_key: {xueli_key}, xuewei_key: {xuewei_key}")
-            print(f"xueli: {xueli}, xuewei: {xuewei}")
-            print("len(xueli):", len(xueli))
             if len(xueli) >= 12 and not xuewei:
                 ctx[xueli_key]  = xueli[:11]
                 ctx[xuewei_key] = xueli[11:]
