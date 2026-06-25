@@ -26,7 +26,7 @@ class _FieldRow(QWidget):
     clicked_field = Signal(str)
     remove_mapping = Signal(str)
 
-    def __init__(self, tag: str, display: str, parent=None):
+    def __init__(self, tag: str, display: str, converters: list[dict] = None, parent=None):
         super().__init__(parent)
         self._field = tag
         self._rules: list[CompareRule] = []
@@ -55,6 +55,16 @@ class _FieldRow(QWidget):
         self._rule_combo.hide()
         layout.addWidget(self._rule_combo)
 
+        self._converter_combo = _NoScrollCombo()
+        self._converter_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._converter_combo.setFixedWidth(160)
+        self._converter_combo.addItem('无转换', None)
+        if converters:
+            for c in converters:
+                self._converter_combo.addItem(c['name'], c['code'])
+        self._converter_combo.hide()
+        layout.addWidget(self._converter_combo)
+
         self._remove_btn = _HoverIconButton(
             QIcon(str(_ASSETS / 'remove.svg')),
             QIcon(str(_ASSETS / 'remove-hover.svg')),
@@ -70,12 +80,15 @@ class _FieldRow(QWidget):
             self._map_lbl.setText(excel_col)
             self._map_lbl.setObjectName('fieldRowMapped')
             self._rule_combo.show()
+            self._converter_combo.show()
             self._remove_btn.show()
         else:
             self._map_lbl.setText('未匹配')
             self._map_lbl.setObjectName('fieldRowUnmapped')
             self._rule_combo.setCurrentIndex(0)
             self._rule_combo.hide()
+            self._converter_combo.setCurrentIndex(0)
+            self._converter_combo.hide()
             self._remove_btn.hide()
         self._map_lbl.style().unpolish(self._map_lbl)
         self._map_lbl.style().polish(self._map_lbl)
@@ -95,6 +108,16 @@ class _FieldRow(QWidget):
         if idx <= 0 or idx - 1 >= len(self._rules):
             return None
         return self._rules[idx - 1]
+
+    def selected_converter_code(self) -> str | None:
+        return self._converter_combo.currentData()
+
+    def set_converter_visible(self, visible: bool):
+        """由外部控制转换器列的可见性（方向切换时调用）"""
+        if visible and self._map_lbl.objectName() == 'fieldRowMapped':
+            self._converter_combo.show()
+        else:
+            self._converter_combo.hide()
 
     def set_pending(self, pending: bool):
         self.setProperty('pending', pending)
@@ -209,7 +232,7 @@ class _MappingWidget(QWidget):
 
         self.mapping_changed.emit()
 
-    def load_lrmx_fields(self, fields: list[tuple[str, str]]):
+    def load_lrmx_fields(self, fields: list[tuple[str, str]], converters: list[dict] = None):
         while self._fields_vbox.count():
             item = self._fields_vbox.takeAt(0)
             if item.widget():
@@ -220,7 +243,7 @@ class _MappingWidget(QWidget):
         self._selected_col = None
 
         for tag, display in fields:
-            row = _FieldRow(tag, display)
+            row = _FieldRow(tag, display, converters=converters)
             row.clicked_field.connect(self._on_field_clicked)
             row.remove_mapping.connect(self._remove_mapping)
             self._field_rows[tag] = row
@@ -312,6 +335,19 @@ class _MappingWidget(QWidget):
                 rule = row.selected_rule()
                 if rule is not None:
                     result[lrmx_field] = rule
+        return result
+
+    def set_converters_visible(self, visible: bool):
+        for row in self._field_rows.values():
+            row.set_converter_visible(visible)
+
+    def get_converter_mapping(self) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for lrmx_field, row in self._field_rows.items():
+            if lrmx_field in self._reverse:
+                code = row.selected_converter_code()
+                if code:
+                    result[lrmx_field] = code
         return result
 
     def clear_all(self):
