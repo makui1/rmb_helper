@@ -15,7 +15,7 @@ from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.ui.workers import BaseWorker
 from app.ui.widgets.file_panel import LrmxFilePanel
-from app.ui.utils import show_error
+from app.ui.utils import show_error, show_warning
 from app.ui.widgets.loading_overlay import _LoadingOverlay
 from app.ui.widgets.field_mapping import _MappingWidget
 from app.ui.widgets.update_log import _UpdateLogRow, _UpdateFieldDialog
@@ -428,6 +428,7 @@ class UpdateTab(QWidget):
 
     def _run(self):
         if self._worker and self._worker.isRunning():
+            show_warning(self, '请等待当前更新完成')
             return
         files = self._file_panel.files()
         excel_path = self._xl_edit.text()
@@ -582,6 +583,8 @@ class UpdateTab(QWidget):
         self.busy_changed.emit(False)
         self._loading_overlay.hide()
         if self._worker and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(3000)
             self._worker.log.disconnect()
             self._worker.error.disconnect()
             self._worker.finished.disconnect()
