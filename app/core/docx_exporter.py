@@ -69,10 +69,14 @@ _TIME6_FIELDS = frozenset({
 })
 _TIME8_FIELDS = frozenset({'JiSuanNianLingShiJian'})
 
-_XUELI_KEY  = 'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
-_XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
-_ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
-_ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_XUELI_YX_KEY  = 'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
+_XUELI_KEY  = 'QuanRiZhiJiaoYu_XueLi'
+_XUEWEI_YX_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei'
+_ZAIZHI_XUELI_YX_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
+_ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi'
+_ZAIZHI_XUEWEI_YX_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei'
 
 # Keys excluded from plain-cell font-shrink (handled elsewhere or non-text).
 _PLAIN_SHRINK_SKIP_KEYS = frozenset({'JianLi', 'ZhaoPian'})
@@ -336,13 +340,18 @@ class DocxExporter:
         ctx: dict = {}
         for xueli_key, xuewei_key in [
             (_XUELI_KEY, _XUEWEI_KEY),
+            (_XUELI_YX_KEY, _XUEWEI_YX_KEY),
             (_ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY),
+            (_ZAIZHI_XUELI_YX_KEY, _ZAIZHI_XUEWEI_YX_KEY),
         ]:
             xueli  = _INVIS.sub('', raw.get(xueli_key,  ''))
             xuewei = _INVIS.sub('', raw.get(xuewei_key, ''))
-            if len(xueli) > 12 and not xuewei:
-                ctx[xueli_key]  = xueli[:12]
-                ctx[xuewei_key] = xueli[12:]
+            print(f"xueli_key: {xueli_key}, xuewei_key: {xuewei_key}")
+            print(f"xueli: {xueli}, xuewei: {xuewei}")
+            print("len(xueli):", len(xueli))
+            if len(xueli) >= 12 and not xuewei:
+                ctx[xueli_key]  = xueli[:11]
+                ctx[xuewei_key] = xueli[11:]
             else:
                 ctx[xueli_key]  = xueli
                 ctx[xuewei_key] = xuewei
