@@ -573,13 +573,13 @@ class SettingsTab(QWidget):
     # ── 转换器管理 ────────────────────────────────────────────────────────
 
     def _load_converters(self):
-        self._custom_converters: list[dict] = get_all_converters(self._settings)
+        self._all_converters: list[dict] = get_all_converters(self._settings)
         self._editing_converter_index: int | None = None
         self._refresh_converter_list()
 
     def _refresh_converter_list(self):
         self._converter_list.clear()
-        for c in self._custom_converters:
+        for c in self._all_converters:
             prefix = '🔒 ' if c.get('builtin') else '✏ '
             self._converter_list.addItem(f'{prefix}{c["name"]}')
         self._on_converter_selected(self._converter_list.currentRow())
@@ -589,7 +589,7 @@ class SettingsTab(QWidget):
             self._edit_conv_btn.setEnabled(False)
             self._del_conv_btn.setEnabled(False)
             return
-        is_builtin = self._custom_converters[row].get('builtin', False)
+        is_builtin = self._all_converters[row].get('builtin', False)
         self._edit_conv_btn.setEnabled(not is_builtin)
         self._del_conv_btn.setEnabled(not is_builtin)
 
@@ -610,7 +610,7 @@ class SettingsTab(QWidget):
         row = self._converter_list.currentRow()
         if row < 0:
             return
-        c = self._custom_converters[row]
+        c = self._all_converters[row]
         if c.get('builtin'):
             return
         self._editing_converter_index = row
@@ -625,7 +625,7 @@ class SettingsTab(QWidget):
         row = self._converter_list.currentRow()
         if row < 0:
             return
-        c = self._custom_converters[row]
+        c = self._all_converters[row]
         if c.get('builtin'):
             return
         reply = QMessageBox.question(
@@ -633,7 +633,7 @@ class SettingsTab(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            self._custom_converters.pop(row)
+            self._all_converters.pop(row)
             self._persist_converters()
             self._refresh_converter_list()
             self._conv_editor.hide()
@@ -661,11 +661,20 @@ class SettingsTab(QWidget):
             self._conv_error_lbl.show()
             return
 
+        # 检查重名
+        for i, existing in enumerate(self._all_converters):
+            if i == self._editing_converter_index:
+                continue
+            if existing['name'] == name:
+                self._conv_error_lbl.setText(f'名称「{name}」已被使用')
+                self._conv_error_lbl.show()
+                return
+
         conv = {'name': name, 'code': code, 'builtin': False}
         if self._editing_converter_index is not None:
-            self._custom_converters[self._editing_converter_index] = conv
+            self._all_converters[self._editing_converter_index] = conv
         else:
-            self._custom_converters.append(conv)
+            self._all_converters.append(conv)
         self._persist_converters()
         self._refresh_converter_list()
         self._conv_editor.hide()
@@ -676,7 +685,7 @@ class SettingsTab(QWidget):
         self._conv_error_lbl.hide()
 
     def _persist_converters(self):
-        save_custom_converters(self._settings, self._custom_converters)
+        save_custom_converters(self._settings, self._all_converters)
 
     def _on_converter_test(self, text: str):
         if not text:
