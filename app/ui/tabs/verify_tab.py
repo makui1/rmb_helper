@@ -6,34 +6,29 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QFileDialog,
     QFrame, QProgressBar,
     QScrollArea, QSpinBox,
-    QDialog,
 )
 from PySide6.QtCore import Qt, Signal, QSize, QEvent, QTimer
 from app.ui.workers import BaseWorker
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPainter, QColor, QPen
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 from app.ui.widgets.file_panel import LrmxFilePanel
-from app.ui.utils import show_error, show_warning
+from app.ui.utils import show_warning
 from app.ui.widgets.loading_overlay import _LoadingOverlay
-from app.ui.widgets.field_mapping import _NoScrollCombo, _FieldRow, _MappingWidget
-from app.ui.widgets.update_log import _HoverIconButton, _UpdateLogRow, _UpdateFieldDialog
-from app.ui.widgets.verify_result import _DiffPanel, _ResultRow
+from app.ui.widgets.field_mapping import _MappingWidget
+from app.ui.widgets.verify_result import _ResultRow
 
 from PySide6.QtCore import QSettings
 
 from app.core.excel_handler import MatchMode
 from app.core.verify_handler import (
-    VerifyHandler, PersonResult, FieldResult,
+    VerifyHandler, PersonResult,
     read_excel_headers, LRMX_FIELDS, DEFAULT_FIELD_ALIASES,
 )
-from app.core.compare_rules import CompareRule, rules_from_json
+from app.core.compare_rules import rules_from_json
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
 
-
-
 # ── background workers ────────────────────────────────────────────────────────
-
 
 
 class _VerifyWorker(BaseWorker):
@@ -54,32 +49,6 @@ class _VerifyWorker(BaseWorker):
         self.finished.emit()
 
 
-class _UpdateWorker(BaseWorker):
-    finished = Signal()
-    # log 由 BaseWorker 声明；critical 重命名为 BaseWorker.error
-
-    def __init__(self, handler, field_mapping, fields_to_write,
-                 header_row, match_excel_col_for_id, match_excel_col_for_name, parent=None):
-        super().__init__(parent)
-        self._handler = handler
-        self._field_mapping = field_mapping
-        self._fields_to_write = fields_to_write
-        self._header_row = header_row
-        self._id_col = match_excel_col_for_id
-        self._name_col = match_excel_col_for_name
-
-    def work(self):
-        self._handler.update(
-            field_mapping=self._field_mapping,
-            fields_to_write=self._fields_to_write,
-            header_row=self._header_row,
-            match_excel_col_for_id=self._id_col,
-            match_excel_col_for_name=self._name_col,
-            progress_cb=self.log.emit,
-        )
-        self.finished.emit()
-
-
 # ── main tab ──────────────────────────────────────────────────────────────────
 
 class VerifyTab(QWidget):
@@ -89,14 +58,10 @@ class VerifyTab(QWidget):
     def __init__(self, file_panel: LrmxFilePanel, parent=None):
         super().__init__(parent)
         self._worker = None
-        self._update_worker = None
         self._settings = QSettings('rmb_helper', 'rmb_helper')
         self._counts = {'ok': 0, 'diff': 0, 'not_found': 0, 'error': 0}
         self._active_filter: str | None = None
         self._result_rows: list[_ResultRow] = []
-        self._update_counts = {'ok': 0, 'not_found': 0, 'error': 0}
-        self._update_log_rows: list[_UpdateLogRow] = []
-        self._update_active_filter: str | None = None
         self._file_panel = file_panel
         self._build_ui()
         self._file_panel.files_changed.connect(self._on_files_changed)
@@ -209,13 +174,6 @@ class VerifyTab(QWidget):
         run_row.addSpacing(12)
         run_row.addWidget(self._rb_both)
         run_row.addStretch()
-        self._update_btn = QPushButton('开始更新')
-        self._update_btn.setIcon(QIcon(str(_ASSETS / 'update.svg')))
-        self._update_btn.setIconSize(QSize(14, 14))
-        self._update_btn.setEnabled(False)
-        self._update_btn.clicked.connect(self._run_update)
-        run_row.addWidget(self._update_btn)
-        run_row.addSpacing(8)
         self._run_btn = QPushButton('开始核验')
         self._run_btn.setObjectName('primary')
         self._run_btn.setEnabled(False)
@@ -345,45 +303,6 @@ class VerifyTab(QWidget):
         self._result_scroll = result_scroll
         layout.addWidget(result_scroll, 1)
 
-        # ══════════════════════════════════════════════════════════════════════
-        # 更新结果区（与核验结果区互斥）
-        # ══════════════════════════════════════════════════════════════════════
-        self._update_filter_row = QWidget()
-        self._update_filter_row.hide()
-        uf = QHBoxLayout(self._update_filter_row)
-        uf.setContentsMargins(0, 0, 0, 0)
-        uf.setSpacing(4)
-        uf.addStretch()
-        self._update_filter_btns: list[QPushButton] = []
-        for label, key in [('全部', 'all'), ('成功', 'ok'), ('错误', 'error')]:
-            btn = QPushButton(label)
-            btn.setFixedHeight(22)
-            btn.setCheckable(True)
-            btn.setProperty('logFilter', key)
-            btn.setObjectName('logFilterBtn')
-            btn.clicked.connect(lambda _, k=key: self._set_update_filter(k))
-            uf.addWidget(btn)
-            self._update_filter_btns.append(btn)
-        self._update_filter_btns[0].setChecked(True)
-        layout.addWidget(self._update_filter_row)
-
-        update_scroll = QScrollArea()
-        update_scroll.setObjectName('resultScroll')
-        update_scroll.setWidgetResizable(True)
-        update_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        update_container = QWidget()
-        self._update_log_vbox = QVBoxLayout(update_container)
-        self._update_log_vbox.setContentsMargins(0, 0, 0, 0)
-        self._update_log_vbox.setSpacing(0)
-        self._update_log_vbox.addStretch()
-        update_scroll.setWidget(update_container)
-        update_scroll.hide()
-        self._update_scroll = update_scroll
-        layout.addWidget(update_scroll, 1)
-
-        self._update_loading_overlay = _LoadingOverlay(self._update_scroll)
-        self._update_scroll.installEventFilter(self)
-
         self._loading_overlay = _LoadingOverlay(self._result_scroll)
         self._result_scroll.installEventFilter(self)
 
@@ -405,8 +324,6 @@ class VerifyTab(QWidget):
         if event.type() == QEvent.Type.Resize:
             if obj is self._result_scroll:
                 self._loading_overlay.resize(self._result_scroll.size())
-            elif obj is self._update_scroll:
-                self._update_loading_overlay.resize(self._update_scroll.size())
         return super().eventFilter(obj, event)
 
     # ── file panel helpers ────────────────────────────────────────────────────
@@ -467,14 +384,11 @@ class VerifyTab(QWidget):
             key_ok = id_col is not None and name_col is not None
         ready = has_files and has_excel and has_mapping and key_ok
         self._run_btn.setEnabled(ready)
-        self._update_btn.setEnabled(ready)
         if has_mapping and not key_ok:
             tip = '请将匹配依据对应的字段（身份证/姓名）映射到某个 Excel 列'
             self._run_btn.setToolTip(tip)
-            self._update_btn.setToolTip(tip)
         else:
             self._run_btn.setToolTip('')
-            self._update_btn.setToolTip('')
 
     def _match_excel_cols(self) -> tuple[str | None, str | None]:
         mapping = self._mapping_widget.get_mapping()
@@ -546,147 +460,10 @@ class VerifyTab(QWidget):
         self.busy_changed.emit(True)
         self._worker.start()
 
-    def _run_update(self):
-        if self._update_worker and self._update_worker.isRunning():
-            return
-        files = self._file_panel.files()
-        excel_path = self._xl_edit.text()
-        mapping = self._mapping_widget.get_mapping()  # {excel_col: lrmx_field}
-
-        field_display = dict(LRMX_FIELDS)
-        mapped_fields = [
-            (lrmx_f, field_display.get(lrmx_f, lrmx_f))
-            for lrmx_f in mapping.values()
-        ]
-
-        dlg = _UpdateFieldDialog(mapped_fields, self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        fields_to_write = dlg.selected_fields()
-        if not fields_to_write:
-            return
-
-        id_col, name_col = self._match_excel_cols()
-        if self._rb_id.isChecked():
-            match_mode = MatchMode.ID_CARD
-        elif self._rb_name.isChecked():
-            match_mode = MatchMode.NAME
-        else:
-            match_mode = MatchMode.NAME_AND_ID
-
-        from app.core.excel_handler import ExcelHandler
-        handler = ExcelHandler(excel_path, files, match_mode)
-
-        self._clear_update_results()
-
-        xl_name = Path(excel_path).name
-        n_files = len(files)
-        n_fields = len(fields_to_write)
-        self._summary_lbl.setText(
-            f'{n_files} 个任免表  ·  名册：{xl_name}  ·  写入 {n_fields} 个字段'
-        )
-        self._back_btn.setText('← 返回')
-
-        self._setup_panel.hide()
-        self._summary_bar.show()
-        self._result_top_sep.show()
-        self._summary_cards_widget.hide()
-        self._export_row.hide()
-        self._result_scroll.hide()
-        self._update_filter_row.show()
-        self._update_scroll.show()
-
-        self._update_loading_overlay.set_text('更新中，请稍候…')
-        self._update_loading_overlay.resize(self._update_scroll.size())
-        self._update_loading_overlay.raise_()
-        self._update_loading_overlay.show()
-
-        self._update_worker = _UpdateWorker(
-            handler=handler,
-            field_mapping=mapping,
-            fields_to_write=fields_to_write,
-            header_row=self._header_spin.value(),
-            match_excel_col_for_id=id_col,
-            match_excel_col_for_name=name_col,
-        )
-        self._update_worker.log.connect(self._on_update_log)
-        self._update_worker.error.connect(self._on_update_critical)
-        self._update_worker.finished.connect(self._on_update_finished)
-        self.busy_changed.emit(True)
-        self._update_worker.start()
-
-    def _on_update_log(self, message: str):
-        if message.startswith('✓'):
-            kind = 'ok'
-            self._update_counts['ok'] += 1
-        elif message.startswith('△'):
-            kind = 'not_found'
-            self._update_counts['not_found'] += 1
-        else:
-            kind = 'error'
-            self._update_counts['error'] += 1
-
-        row = _UpdateLogRow(message, kind)
-        self._update_log_rows.append(row)
-        idx = self._update_log_vbox.count() - 1
-        self._update_log_vbox.insertWidget(idx, row)
-
-        if self._update_active_filter is not None:
-            show = (
-                (self._update_active_filter == 'ok' and kind == 'ok')
-                or (self._update_active_filter == 'error' and kind in ('not_found', 'error'))
-            )
-            row.setVisible(show)
-
-    def _on_update_critical(self, msg: str):
-        self.busy_changed.emit(False)
-        self._update_loading_overlay.hide()
-        show_error(self, msg)
-        self._back_to_setup()
-
-    def _on_update_finished(self):
-        self.busy_changed.emit(False)
-        QTimer.singleShot(400, self._update_loading_overlay.hide)
-        ok = self._update_counts['ok']
-        not_found = self._update_counts['not_found']
-        error = self._update_counts['error']
-        self._summary_lbl.setText(
-            f'已更新 {ok} 个  ·  未匹配 {not_found} 个  ·  失败 {error} 个'
-        )
-
-    def _set_update_filter(self, key: str):
-        self._update_active_filter = None if key == 'all' else key
-        for btn in self._update_filter_btns:
-            btn.setChecked(btn.property('logFilter') == key)
-        for row in self._update_log_rows:
-            if self._update_active_filter is None:
-                row.show()
-            elif self._update_active_filter == 'ok':
-                row.setVisible(row._kind == 'ok')
-            else:  # 'error' → 包含 not_found 和 error
-                row.setVisible(row._kind in ('not_found', 'error'))
-
-    def _clear_update_results(self):
-        self._update_counts = {'ok': 0, 'not_found': 0, 'error': 0}
-        self._update_log_rows = []
-        self._update_active_filter = None
-        for btn in self._update_filter_btns:
-            btn.setChecked(btn.property('logFilter') == 'all')
-        while self._update_log_vbox.count() > 1:
-            item = self._update_log_vbox.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
     def _back_to_setup(self):
         self._progress.setVisible(False)
         self.busy_changed.emit(False)
         self._loading_overlay.hide()
-        self._update_loading_overlay.hide()
-        if self._update_worker and self._update_worker.isRunning():
-            self._update_worker.log.disconnect()
-            self._update_worker.error.disconnect()
-            self._update_worker.finished.disconnect()
         self._setup_panel.show()
         self._back_btn.setText('← 重新配置')
         self._summary_bar.hide()
@@ -694,10 +471,7 @@ class VerifyTab(QWidget):
         self._summary_cards_widget.hide()
         self._export_row.hide()
         self._result_scroll.hide()
-        self._update_filter_row.hide()
-        self._update_scroll.hide()
         self._clear_results()
-        self._clear_update_results()
 
     def _on_result(self, result: PersonResult):
         self._progress.setValue(self._progress.value() + 1)
