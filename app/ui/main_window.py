@@ -476,6 +476,7 @@ class MainWindow(QMainWindow):
             # 编辑器 Tab：放大窗口、禁止手动缩放（仍可最大化/最小化）
             self._resizable = False
             self.setMinimumSize(1400, 1000)
+            self.move(100,20)
         else:
             self._resizable = True
             self.setMinimumSize(800, 500)
