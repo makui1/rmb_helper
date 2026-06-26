@@ -483,6 +483,41 @@ QPushButton#layoutToggleR:hover:!checked {{
     background: #EEEDEA;
 }}
 
+/* ── 批量更新：方向切换（分段控件）────────────────────────────────────── */
+QPushButton#dirToggleL {{
+    border: 1px solid #C8C6C0;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    background: #FFFFFF;
+    color: #555550;
+    padding: 6px 20px;
+    font-size: 13px;
+}}
+QPushButton#dirToggleL:checked {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-color: {ACCENT_HOVER};
+}}
+QPushButton#dirToggleL:hover:!checked {{
+    background: #EEEDEA;
+}}
+QPushButton#dirToggleR {{
+    border: 1px solid #C8C6C0;
+    border-radius: 0 6px 6px 0;
+    background: #FFFFFF;
+    color: #555550;
+    padding: 6px 20px;
+    font-size: 13px;
+}}
+QPushButton#dirToggleR:checked {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-color: {ACCENT_HOVER};
+}}
+QPushButton#dirToggleR:hover:!checked {{
+    background: #EEEDEA;
+}}
+
 /* ── 任免表编辑器：左侧文件树面板（复用 fileListContainer / fileCountLabel）── */
 QWidget#lrmxTreePanel {{
     background: transparent;

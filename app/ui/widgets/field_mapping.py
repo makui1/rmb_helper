@@ -30,6 +30,8 @@ class _FieldRow(QWidget):
         super().__init__(parent)
         self._field = tag
         self._rules: list[CompareRule] = []
+        self._rule_visible = True
+        self._converter_visible = True
         self.setObjectName('fieldRow')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -79,8 +81,10 @@ class _FieldRow(QWidget):
         if excel_col:
             self._map_lbl.setText(excel_col)
             self._map_lbl.setObjectName('fieldRowMapped')
-            self._rule_combo.show()
-            self._converter_combo.show()
+            if self._rule_visible:
+                self._rule_combo.show()
+            if self._converter_visible:
+                self._converter_combo.show()
             self._remove_btn.show()
         else:
             self._map_lbl.setText('未匹配')
@@ -112,8 +116,17 @@ class _FieldRow(QWidget):
     def selected_converter_code(self) -> str | None:
         return self._converter_combo.currentData()
 
+    def set_rule_visible(self, visible: bool):
+        """由外部控制规则列的可见性（方向切换时调用）"""
+        self._rule_visible = visible
+        if visible and self._map_lbl.objectName() == 'fieldRowMapped':
+            self._rule_combo.show()
+        else:
+            self._rule_combo.hide()
+
     def set_converter_visible(self, visible: bool):
         """由外部控制转换器列的可见性（方向切换时调用）"""
+        self._converter_visible = visible
         if visible and self._map_lbl.objectName() == 'fieldRowMapped':
             self._converter_combo.show()
         else:
@@ -336,6 +349,10 @@ class _MappingWidget(QWidget):
                 if rule is not None:
                     result[lrmx_field] = rule
         return result
+
+    def set_rules_visible(self, visible: bool):
+        for row in self._field_rows.values():
+            row.set_rule_visible(visible)
 
     def set_converters_visible(self, visible: bool):
         for row in self._field_rows.values():

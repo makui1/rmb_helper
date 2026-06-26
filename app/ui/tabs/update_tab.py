@@ -127,10 +127,15 @@ class UpdateTab(QWidget):
         self._dir_import_btn = QPushButton('Excel → LRMX  从名册更新任免表')
         self._dir_import_btn.setCheckable(True)
         self._dir_import_btn.setChecked(True)
+        self._dir_import_btn.setObjectName('dirToggleL')
         self._dir_import_btn.clicked.connect(lambda: self._switch_direction(DIRECTION_IMPORT))
         self._dir_export_btn = QPushButton('LRMX → Excel  从任免表更新名册')
         self._dir_export_btn.setCheckable(True)
+        self._dir_export_btn.setObjectName('dirToggleR')
         self._dir_export_btn.clicked.connect(lambda: self._switch_direction(DIRECTION_EXPORT))
+        self._dir_group = QButtonGroup(self)
+        self._dir_group.addButton(self._dir_import_btn, DIRECTION_IMPORT)
+        self._dir_group.addButton(self._dir_export_btn, DIRECTION_EXPORT)
         dir_row.addWidget(self._dir_import_btn)
         dir_row.addWidget(self._dir_export_btn)
         dir_row.addStretch()
@@ -346,6 +351,7 @@ class UpdateTab(QWidget):
         self._direction = direction
         self._dir_import_btn.setChecked(direction == DIRECTION_IMPORT)
         self._dir_export_btn.setChecked(direction == DIRECTION_EXPORT)
+        self._mapping_widget.set_rules_visible(direction == DIRECTION_IMPORT)
         self._mapping_widget.set_converters_visible(direction == DIRECTION_EXPORT)
         self._update_run_btn()
 

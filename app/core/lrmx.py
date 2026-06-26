@@ -74,6 +74,11 @@ class LrmxFile:
                     stripped = re.sub(r'\s+', '', elem.text)
                     if stripped != elem.text:
                         elem.text = stripped
+                elif elem.tag == 'ShenFenZheng' and elem.text:
+                    # 身份证号末尾 x 统一转为大写
+                    v = elem.text.strip()
+                    if v and v[-1] == 'x':
+                        elem.text = v[:-1] + 'X'
             else:
                 for child in elem:
                     _norm(child)
