@@ -19,6 +19,26 @@ from app.ui.workers import BaseWorker
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
 
+class _FormatWorker(BaseWorker):
+    """后台格式化 LRMX 文件（空标签自闭合 + 姓名空格 + 身份证 x→X）。"""
+
+    def __init__(self, files: list[str]):
+        super().__init__()
+        self.files = files
+
+    def run(self):
+        total = len(self.files)
+        for i, path in enumerate(self.files):
+            try:
+                LrmxFile(Path(path)).normalize()
+                self.log.emit(f'<span style="color:#1E7A3A;">✓</span> {Path(path).name}')
+            except Exception as e:
+                self.log.emit(
+                    f'<span style="color:#B02020;">✗</span> {Path(path).name}：{e}'
+                )
+            self.progress.emit(int((i + 1) / total * 100))
+
+
 class _Worker(BaseWorker):
     finished = Signal(int, int, float)  # done, total, elapsed_seconds
 
@@ -332,29 +352,37 @@ class ConvertTab(QWidget):
         self._dir_btn.setEnabled(not checked)
 
     def _on_format(self):
-        """对文件列表中所有 lrmx 执行 XML 格式化。"""
+        """对文件列表中所有 lrmx 执行 XML 格式化（后台线程）。"""
         files = self._file_panel.files()
         if not files:
             self._log.clear()
             self._log.append('⚠ 文件列表为空，请先添加 lrmx 文件。')
             return
+
+        self._format_btn.setEnabled(False)
+        self._run_btn.setEnabled(False)
         self._log.clear()
-        ok = err = 0
-        for path in files:
-            try:
-                LrmxFile(Path(path)).normalize()
-                self._log.append(f'<span style="color:#1E7A3A;">✓</span> {Path(path).name}')
-                ok += 1
-            except Exception as e:
-                self._log.append(
-                    f'<span style="color:#B02020;">✗</span> {Path(path).name}：{e}'
-                )
-                err += 1
-        self._log.append(f'')
+        self._log_entries.clear()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setVisible(True)
+
+        self._format_worker = _FormatWorker(files=list(files))
+        self._format_worker.log.connect(self._append_log)
+        self._format_worker.progress.connect(self._progress.setValue)
+        self._format_worker.finished.connect(self._on_format_finished)
+        self.busy_changed.emit(True)
+        self._format_worker.start()
+
+    def _on_format_finished(self):
+        self._progress.setVisible(False)
+        self._format_btn.setEnabled(True)
+        self._run_btn.setEnabled(True)
+        self.busy_changed.emit(False)
+        self._log.append('')
+        ok = sum(1 for e in self._log_entries if '✓' in e)
+        err = len(self._log_entries) - ok
         self._log.append(f'格式化完成：{ok} 成功，{err} 失败')
-        if checked:
-            self._chk_collect.setChecked(False)
-        self._chk_collect.setEnabled(not checked)
 
     # ── drag & drop (tab-level, delegates to panel) ───────────────────────────
 
