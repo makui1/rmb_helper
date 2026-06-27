@@ -15,9 +15,14 @@ class _DiffPanel(QWidget):
     _DEL = 'background:#FDEAEA;color:#B02020;border-radius:2px;padding:0 2px'
     _INS = 'background:#E8F5EC;color:#1E7A3A;border-radius:2px;padding:0 2px'
 
-    def __init__(self, result: PersonResult, parent=None):
+    def __init__(self, result: PersonResult, parent=None,
+                 col_a_label: str = 'Excel 名册', col_b_label: str = '任免表',
+                 footer_prefix: str = '共核验'):
         super().__init__(parent)
         self.setObjectName('diffPanel')
+        self._col_a = col_a_label
+        self._col_b = col_b_label
+        self._footer_prefix = footer_prefix
         self._build(result)
 
     def _build(self, result: PersonResult):
@@ -32,8 +37,8 @@ class _DiffPanel(QWidget):
         hl.setContentsMargins(10, 5, 10, 5)
         hl.setSpacing(0)
         for text, color, w in [('字段', '#888880', 150),
-                                ('Excel 名册', '#2060A0', None),
-                                ('任免表', '#1E7A3A', None)]:
+                                (self._col_a, '#2060A0', None),
+                                (self._col_b, '#1E7A3A', None)]:
             lbl = QLabel(text)
             lbl.setStyleSheet(f'color:{color};font-size:11px;font-weight:500;'
                               f'background:transparent;')
@@ -58,7 +63,7 @@ class _DiffPanel(QWidget):
         # ── footer ────────────────────────────────────────────────────────
         ok_n  = sum(1 for f in result.fields if f.match)
         err_n = sum(1 for f in result.fields if not f.match)
-        footer = QLabel(f'共核验 {len(result.fields)} 个字段 · 一致 {ok_n} · 差异 {err_n}')
+        footer = QLabel(f'{self._footer_prefix} {len(result.fields)} 个字段 · 一致 {ok_n} · 差异 {err_n}')
         footer.setStyleSheet('color:#AAAAAA;font-size:10px;padding:4px 10px;'
                              'background:transparent;')
         outer.addWidget(footer)
@@ -116,10 +121,17 @@ class _DiffPanel(QWidget):
 
 
 class _ResultRow(QWidget):
-    def __init__(self, result: PersonResult, parent=None):
+    def __init__(self, result: PersonResult, parent=None,
+                 col_a_label: str = 'Excel 名册', col_b_label: str = '任免表',
+                 footer_prefix: str = '共核验',
+                 not_found_text: str = '名册无此人'):
         super().__init__(parent)
         self._result = result
         self._expanded = False
+        self._col_a = col_a_label
+        self._col_b = col_b_label
+        self._footer_prefix = footer_prefix
+        self._not_found_text = not_found_text
         self._build_ui()
 
     def _build_ui(self):
@@ -152,7 +164,7 @@ class _ResultRow(QWidget):
             n_diff = sum(1 for f in self._result.fields if not f.match)
             badge_text, color = f'{n_diff} 处差异', '#B02020'
         elif status == 'not_found':
-            badge_text, color = '名册无此人', '#C07030'
+            badge_text, color = self._not_found_text, '#C07030'
         else:
             badge_text, color = '错误', '#888880'
 
@@ -163,7 +175,10 @@ class _ResultRow(QWidget):
         outer.addWidget(self._header)
 
         # Diff panel (native widgets — auto-sizes, no HTML QTextEdit)
-        self._diff_panel = _DiffPanel(self._result)
+        self._diff_panel = _DiffPanel(self._result,
+                                      col_a_label=self._col_a,
+                                      col_b_label=self._col_b,
+                                      footer_prefix=self._footer_prefix)
         self._diff_panel.hide()
         outer.addWidget(self._diff_panel)
 

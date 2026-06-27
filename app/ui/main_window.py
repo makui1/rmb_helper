@@ -28,8 +28,15 @@ if sys.platform == 'win32':
             ('pt',      _wt.POINT),
         ]
 
+    class _NCCALCSIZE_PARAMS(ctypes.Structure):
+        _fields_ = [
+            ('rgrc',  ctypes.wintypes.RECT * 3),
+            ('lppos', ctypes.c_void_p),
+        ]
+
     _WM_NCHITTEST  = 0x0084
     _WM_SYSCOMMAND = 0x0112
+    _WM_NCCALCSIZE = 0x0083
     _SC_MINIMIZE   = 0xF020
     _SC_MAXIMIZE   = 0xF030
     _SC_RESTORE    = 0xF120
@@ -172,7 +179,6 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
         self.resize(1250, 700)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowIcon(QIcon(str(_ASSETS / 'rmb.ico')))
         self.setStyleSheet(QSS)
         self._sidebar_container: QWidget | None = None
@@ -195,6 +201,43 @@ class MainWindow(QMainWindow):
             QApplication.instance().installEventFilter(self)
         if open_path:
             self.open_lrmx(open_path)
+
+    def showEvent(self, event):
+        if sys.platform == 'win32':
+            hwnd = int(self.winId())
+            GWL_STYLE = -16
+            GWL_EXSTYLE = -20
+
+            class _MARGINS(ctypes.Structure):
+                _fields_ = [
+                    ("cxLeftWidth",   ctypes.c_int),
+                    ("cxRightWidth",  ctypes.c_int),
+                    ("cyTopHeight",   ctypes.c_int),
+                    ("cyBottomHeight",ctypes.c_int),
+                ]
+            margins = _MARGINS(0, 0, 1, 0)
+            try:
+                ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+            except Exception:
+                pass
+
+            WS_CAPTION      = 0x00C00000
+            WS_THICKFRAME   = 0x00040000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_MAXIMIZEBOX = 0x00010000
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            style |= WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+
+            SWP_FRAMECHANGED = 0x0020
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE,
+            )
+
+        super().showEvent(event)
 
     def open_lrmx(self, path: str):
         """切换到任免表编辑器 Tab 并打开指定 lrmx 文件。"""
@@ -325,6 +368,25 @@ class MainWindow(QMainWindow):
         if sys.platform == 'win32':
             import ctypes
             msg = _MSG.from_address(int(message))
+
+            if msg.message == _WM_NCCALCSIZE:
+                if msg.wParam:
+                    if self.isMaximized():
+                        params = _NCCALCSIZE_PARAMS.from_address(msg.lParam)
+                        SM_CXSIZEFRAME = 32
+                        SM_CYSIZEFRAME = 33
+                        SM_CXPADDEDBORDER = 92
+                        frame_x = ctypes.windll.user32.GetSystemMetrics(SM_CXSIZEFRAME)
+                        frame_y = ctypes.windll.user32.GetSystemMetrics(SM_CYSIZEFRAME)
+                        pad = ctypes.windll.user32.GetSystemMetrics(SM_CXPADDEDBORDER)
+                        inset_x = frame_x + pad
+                        inset_y = frame_y + pad
+                        params.rgrc[0].left += inset_x
+                        params.rgrc[0].top += inset_y
+                        params.rgrc[0].right -= inset_x
+                        params.rgrc[0].bottom -= inset_y
+                    return True, 0
+                return False, 0
 
             if msg.message == _WM_NCHITTEST:
                 sx = ctypes.c_short(msg.lParam & 0xFFFF).value

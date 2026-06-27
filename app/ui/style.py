@@ -9,13 +9,13 @@ _ASSETS = (Path(__file__).parent / 'assets').as_posix()
 QSS = f"""
 QMainWindow, QDialog {{
     background-color: #FFFFFF;
+    font-size: 13px;
 }}
 
 QWidget {{
     background-color: #FFFFFF;
     color: #1A1A1A;
     font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-    font-size: 13px;
 }}
 
 /* ── 自定义标题栏 ───────────────────────────────────────────────────── */

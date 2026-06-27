@@ -623,8 +623,12 @@ class SettingsTab(QWidget):
 
         cv.addWidget(tabs)
 
-        # 保存按钮（在 QScrollArea 之外，始终可见）
+        # 保存 / 恢复默认（在 QScrollArea 之外，始终可见）
         save_row = QHBoxLayout()
+        reset_btn = QPushButton('恢复默认设置')
+        reset_btn.setToolTip('清除所有设置并恢复为默认值')
+        reset_btn.clicked.connect(self._reset_defaults)
+        save_row.addWidget(reset_btn)
         save_row.addStretch()
         save_btn = QPushButton('保存设置')
         save_btn.setObjectName('primary')
@@ -719,6 +723,26 @@ class SettingsTab(QWidget):
         self._settings.setValue('compare_rules', rules_to_json(self._compare_rules))
 
         QMessageBox.information(self, '保存成功', '设置已保存。')
+
+    def _reset_defaults(self):
+        reply = QMessageBox.warning(
+            self, '恢复默认设置',
+            '确定要恢复所有设置为默认值吗？\n\n'
+            '此操作将清除：\n'
+            '  · 命名规则预设\n'
+            '  · 核验字段自动匹配关键词\n'
+            '  · 比较规则\n'
+            '  · 自定义转换器\n\n'
+            '此操作不可撤销。',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._settings.clear()
+        self._settings.sync()
+        self._load()
+        QMessageBox.information(self, '已恢复', '所有设置已恢复为默认值。')
 
     def naming_rules(self) -> list[str]:
         return [self._rule_list.item(i).text() for i in range(self._rule_list.count())]
