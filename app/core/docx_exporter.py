@@ -69,20 +69,17 @@ _TIME6_FIELDS = frozenset({
 })
 _TIME8_FIELDS = frozenset({'JiSuanNianLingShiJian'})
 
-_XUELI_KEY  = 'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
-_XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
-_ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
-_ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_XUELI_YX_KEY  = 'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
+_XUELI_KEY  = 'QuanRiZhiJiaoYu_XueLi'
+_XUEWEI_YX_KEY = 'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_XUEWEI_KEY = 'QuanRiZhiJiaoYu_XueWei'
+_ZAIZHI_XUELI_YX_KEY = 'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi'
+_ZAIZHI_XUELI_KEY = 'ZaiZhiJiaoYu_XueLi'
+_ZAIZHI_XUEWEI_YX_KEY = 'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi'
+_ZAIZHI_XUEWEI_KEY = 'ZaiZhiJiaoYu_XueWei'
 
-# Fields whose cells should get the same height-aware font-shrink treatment as JianLi.
-_PLAIN_SHRINK_KEYS: tuple[str, ...] = (
-    'QuanRiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',   # 全日制学历毕业院校系及专业
-    'QuanRiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',  # 全日制学位毕业院校系及专业
-    'ZaiZhiJiaoYu_XueLi_BiYeYuanXiaoXi',       # 在职学历毕业院校系及专业
-    'ZaiZhiJiaoYu_XueWei_BiYeYuanXiaoXi',     # 在职学位毕业院校系及专业
-    'XianRenZhiWu',                             # 现任职务
-    'JiangChengQingKuang',                      # 奖惩情况
-)
+# Keys excluded from plain-cell font-shrink (handled elsewhere or non-text).
+_PLAIN_SHRINK_SKIP_KEYS = frozenset({'JianLi', 'ZhaoPian'})
 
 # Matches all whitespace variants + invisible Unicode chars
 _INVIS = re.compile(r'[\s​‌‍﻿ 　]+')
@@ -155,6 +152,77 @@ def _format_retire_age(value: str, birth_ym6: str) -> str:
             retire_age -= 1
         return f'{formatted}\n（{retire_age}岁）'
     return formatted
+
+
+# ── 改革后退休年龄计算（2025-01-01 起实施） ───────────────────────────────────
+
+def _parse_reform_age(gai_ge_qian: str) -> int | None:
+    """从 GaiGeQianRenZhiNianLingJieXian 解析原退休年龄。
+
+    Returns:
+        原退休年龄（int），或 None（已到龄人员/无法解析）。
+    """
+    v = _INVIS.sub('', gai_ge_qian).strip()
+    m = re.search(r'(\d+)岁', v)
+    return int(m.group(1)) if m else None
+
+
+def _calc_reform_retire_age(birth_ym: str, original_age: int) -> tuple[str | None, int, int]:
+    """基于 2025 年改革政策计算到龄年月及精确退休年龄。
+
+    改革规则（2025-01-01 起实施）：
+      - 原 60 岁（男职工）：每 4 月延 1 月，最多 36 月 → 目标 63 岁
+      - 原 55 岁（女干部）：每 4 月延 1 月，最多 36 月 → 目标 58 岁
+      - 原 50 岁（女工人）：每 2 月延 1 月，最多 60 月 → 目标 55 岁
+      - 原 63/65/66 岁：维持不变
+
+    Returns:
+        (retire_ym, age_years, age_months)
+        retire_ym 格式 yyyyMM；计算失败返回 (None, 0, 0)。
+    """
+    if not re.fullmatch(r'\d{6}', birth_ym):
+        return None, 0, 0
+
+    b_year, b_month = int(birth_ym[:4]), int(birth_ym[4:])
+
+    # 原到龄年月（月份从 1 开始）
+    orig_ym = (b_year + original_age) * 12 + b_month
+    REFORM_YM = 2025 * 12 + 1  # 2025 年 1 月
+
+    if orig_ym < REFORM_YM:
+        delay = 0   # 改革前已到龄
+    elif original_age == 50:
+        n = orig_ym - REFORM_YM + 1
+        delay = min((n - 1) // 2 + 1, 60)
+    elif original_age in (55, 60):
+        n = orig_ym - REFORM_YM + 1
+        delay = min((n - 1) // 4 + 1, 36)
+    else:
+        delay = 0   # 63/65/66 维持不变
+
+    # 实际到龄年月
+    total = orig_ym + delay
+    retire_year = (total - 1) // 12
+    retire_month = (total - 1) % 12 + 1
+    retire_ym = f'{retire_year:04d}{retire_month:02d}'
+
+    # 精确年龄（年 + 月）
+    birth_total = b_year * 12 + b_month
+    age_total = total - birth_total
+    age_y = age_total // 12
+    age_m = age_total % 12
+
+    return retire_ym, age_y, age_m
+
+
+def _format_reform_retire(retire_ym: str, age_y: int, age_m: int) -> str:
+    """格式化到龄年月为 'yyyy.MM\\n（x岁y个月）'。
+    当 y=0 时只显示 'x岁'。
+    """
+    formatted = _format_time6(retire_ym)
+    if age_m == 0:
+        return f'{formatted}\n（{age_y}岁）'
+    return f'{formatted}\n（{age_y}岁{age_m}个月）'
 
 
 def _format_jianli_list(text: str) -> list[str]:
@@ -308,6 +376,7 @@ class DocxExporter:
         self._jianli_line_count: int = 0
         self._jianli_lines: list[str] = []
         self._plain_cell_shrink: list[str] = []
+        self._edu_merge_xueli_texts: list[str] = []
 
     def export(self, lrmx: LrmxFile, output_path: Path) -> None:
         from docxtpl import DocxTemplate
@@ -326,79 +395,105 @@ class DocxExporter:
             self.export(lrmx, out)
             return out.read_bytes()
 
-    def _build_context(self, lrmx: LrmxFile, tpl) -> dict:
-        raw = lrmx.as_dict()
+    def _ctx_time_fields(self, raw: dict) -> dict:
+        """格式化出生、到龄（基于改革政策计算）、六位/八位时间字段。"""
         birth_ym = _INVIS.sub('', raw.get('ChuShengNianYue', ''))
+        ctx: dict = {}
+        ctx['ChuShengNianYue'] = _format_birth(raw.get('ChuShengNianYue', ''))
 
+        # 退休时间：优先基于 GaiGeQianRenZhiNianLingJieXian + 改革政策计算
+        gai_ge_qian = raw.get('GaiGeQianRenZhiNianLingJieXian', '')
+        original_age = _parse_reform_age(gai_ge_qian)
+        if original_age is not None:
+            retire_ym, age_y, age_m = _calc_reform_retire_age(birth_ym, original_age)
+            if retire_ym:
+                ctx['DaoLingNianYue'] = _format_reform_retire(retire_ym, age_y, age_m)
+            else:
+                ctx['DaoLingNianYue'] = _format_retire_age(
+                    raw.get('DaoLingNianYue', ''), birth_ym)
+        else:
+            # 已到龄人员或无法解析：使用原有 DaoLingNianYue
+            ctx['DaoLingNianYue'] = _format_retire_age(
+                raw.get('DaoLingNianYue', ''), birth_ym)
+
+        for key in _TIME6_FIELDS:
+            ctx[key] = _format_time6(raw.get(key, ''))
+        for key in _TIME8_FIELDS:
+            ctx[key] = _format_time8(raw.get(key, ''))
+        return ctx
+
+    def _ctx_education_fields(self, raw: dict) -> dict:
+        """处理学历/学位字段溢出（超 12 字时的拆分/标记逻辑）。"""
+        ctx: dict = {}
+        for xueli_key, xuewei_key in [
+            (_XUELI_KEY, _XUEWEI_KEY),
+            (_XUELI_YX_KEY, _XUEWEI_YX_KEY),
+            (_ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY),
+            (_ZAIZHI_XUELI_YX_KEY, _ZAIZHI_XUEWEI_YX_KEY),
+        ]:
+            xueli  = _INVIS.sub('', raw.get(xueli_key,  ''))
+            xuewei = _INVIS.sub('', raw.get(xuewei_key, ''))
+            if len(xueli) >= 12 and not xuewei:
+                ctx[xueli_key]  = xueli[:11]
+                ctx[xuewei_key] = xueli[11:]
+            else:
+                ctx[xueli_key]  = xueli
+                ctx[xuewei_key] = xuewei
+        return ctx
+
+    def _ctx_plain_fields(self, raw: dict, skip_keys: set) -> dict:
+        """对未单独处理的字段做 escape + 不可见字符清理。"""
         ctx: dict = {}
         for key, value in raw.items():
-            if key in ('JianLi', _XUELI_KEY, _XUEWEI_KEY):
-                continue  # handled separately below
-            elif key == 'ZhaoPian':
-                ctx[key] = self._decode_photo(value, tpl)
-            elif key == 'ChuShengNianYue':
-                ctx[key] = _format_birth(value)
-            elif key == 'DaoLingNianYue':
-                ctx[key] = _format_retire_age(value, birth_ym)
-            elif key in _TIME6_FIELDS:
-                ctx[key] = _format_time6(value)
-            elif key in _TIME8_FIELDS:
-                ctx[key] = _format_time8(value)
-            else:
-                ctx[key] = _html.escape(_INVIS.sub('', value), quote=False)
+            if key in skip_keys:
+                continue
+            ctx[key] = _html.escape(_INVIS.sub('', value), quote=False)
+        return ctx
 
-        # JianLi: list of 'time<TAB>experience' strings for a
-        # {%p for line in JianLi %}{{line}}{%p endfor %} loop. Column alignment
-        # (hanging indent) is configured in the template, not here.
+    def _build_context(self, lrmx: LrmxFile, tpl) -> dict:
+        raw = lrmx.as_dict()
+
+        SPECIAL_KEYS = {'JianLi', _XUELI_KEY, _XUEWEI_KEY,
+                        _ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY,
+                        'ZhaoPian', 'ChuShengNianYue', 'DaoLingNianYue',
+                        *_TIME6_FIELDS, *_TIME8_FIELDS}
+
+        ctx: dict = {}
+        ctx.update(self._ctx_plain_fields(raw, SPECIAL_KEYS))
+        ctx.update(self._ctx_time_fields(raw))
+        ctx.update(self._ctx_education_fields(raw))
+
+        # 收集学位为空的学历文本（用于后续纵向合并单元格）
+        self._edu_merge_xueli_texts = []
+        for xueli_key, xuewei_key in [
+            (_XUELI_KEY, _XUEWEI_KEY),
+            (_ZAIZHI_XUELI_KEY, _ZAIZHI_XUEWEI_KEY),
+        ]:
+            x_v = ctx.get(xueli_key, '').strip()
+            xw_v = ctx.get(xuewei_key, '').strip()
+            if x_v and not xw_v:
+                self._edu_merge_xueli_texts.append(x_v)
+
+        ctx['ZhaoPian'] = self._decode_photo(raw.get('ZhaoPian', ''), tpl)
+
+        # JianLi
         jianli_raw = _format_jianli_list(raw.get('JianLi', ''))
         jianli = [_html.escape(l, quote=False) for l in jianli_raw]
         self._jianli_line_count = len(jianli)
-        self._jianli_lines = jianli_raw   # unescaped, for width estimation
+        self._jianli_lines = jianli_raw
         ctx['JianLi'] = jianli
 
-        # QuanRiZhiJiaoYu XueLi/XueWei overflow:
-        #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
-        #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
-        xueli  = _INVIS.sub('', raw.get(_XUELI_KEY,  ''))
-        xuewei = _INVIS.sub('', raw.get(_XUEWEI_KEY, ''))
-        if len(xueli) > 12 and not xuewei:
-            ctx[_XUELI_KEY]  = xueli[:12]
-            ctx[_XUEWEI_KEY] = xueli[12:]
-        elif len(xueli) > 12:
-            ctx[_XUELI_KEY]  = xueli
-            ctx[_XUEWEI_KEY] = xuewei
-        else:
-            ctx[_XUELI_KEY]  = xueli
-            ctx[_XUEWEI_KEY] = xuewei
-
-
-        # ZaiZhiJiaoYu XueLi/XueWei overflow:
-        #   > 12 chars + XueWei empty  → split: XueLi[:10] / XueLi[10:] → XueWei
-        #   > 12 chars + XueWei filled → keep as-is, flag for post-process font shrink
-        xueli  = _INVIS.sub('', raw.get(_ZAIZHI_XUELI_KEY,  ''))
-        xuewei = _INVIS.sub('', raw.get(_ZAIZHI_XUEWEI_KEY, ''))
-        if len(xueli) > 12 and not xuewei:
-            ctx[_ZAIZHI_XUELI_KEY]  = xueli[:12]
-            ctx[_ZAIZHI_XUEWEI_KEY] = xueli[12:]
-        elif len(xueli) > 12:
-            ctx[_ZAIZHI_XUELI_KEY]  = xueli
-            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
-        else:
-            ctx[_ZAIZHI_XUELI_KEY]  = xueli
-            ctx[_ZAIZHI_XUEWEI_KEY] = xuewei
-
-        # JiaTingChengYuan: fixed indexed slots m0..m(MAX_FAMILY_SLOTS-1)
+        # 家庭成员
         family = self._build_family(lrmx)
         for i in range(MAX_FAMILY_SLOTS):
             ctx[f'm{i}'] = family[i] if i < len(family) else dict(_EMPTY_MEMBER)
 
-        # Collect rendered texts for height-aware font shrink in post-processing.
-        # ctx values are html-escaped; unescape to recover the actual paragraph text.
+        # 收集所有待收缩的纯文本字段（排除单独处理的 JianLi/ZhaoPian）
         self._plain_cell_shrink = [
             t for t in (
                 _html.unescape(ctx[k]).strip()
-                for k in _PLAIN_SHRINK_KEYS
-                if isinstance(ctx.get(k), str)
+                for k in ctx
+                if k not in _PLAIN_SHRINK_SKIP_KEYS and isinstance(ctx.get(k), str)
             )
             if t
         ]
@@ -410,7 +505,8 @@ class DocxExporter:
     def _post_process(self, path: Path) -> None:
         from docx import Document as DocxDoc
         doc = DocxDoc(path)
-        changed = self._shrink_overflow_cells(doc)
+        changed = self._merge_empty_degree_cells(doc)
+        changed |= self._shrink_overflow_cells(doc)
         changed |= self._shrink_xueli_cell(doc)
         changed |= self._shrink_jianli_cell(doc)
         changed |= self._shrink_plain_cells(doc)
@@ -552,9 +648,8 @@ class DocxExporter:
             total += content_line_count
         return total
 
-    def _shrink_jianli_cell(self, doc) -> bool:
-        from docx.shared import Pt
-        from docx.enum.text import WD_LINE_SPACING
+    def _find_jianli_cells(self, doc) -> list:
+        """扫描文档，返回含简历内容的单元格信息列表。"""
         from typing import NamedTuple
 
         class _CellInfo(NamedTuple):
@@ -562,7 +657,6 @@ class DocxExporter:
             width_emu: int
             height_pt: float
 
-        # ── 第一步：找到简历单元格，同时取宽度和高度 ──────────────────────────────
         jianli_cells: list[_CellInfo] = []
         seen: set[int] = set()
         for table in doc.tables:
@@ -580,55 +674,47 @@ class DocxExporter:
                         width_emu=cell.width or 0,
                         height_pt=row_h_pt,
                     ))
+        return jianli_cells
 
-        if not jianli_cells:
-            return False
-
-        cell_w = jianli_cells[0].width_emu
-        cell_h_pt = jianli_cells[0].height_pt
-
-        # ── 第二步：枚举字号，求满足 f(x)*(x+1) <= cell_h_pt 的最大 x ────────────
+    def _calc_jianli_target_font(self, cell_w: int, cell_h_pt: float) -> tuple[float, float]:
+        """返回 (target_pt, target_spacing_pt)。"""
         max_font_pt = _JIANLI_FONT_TIERS[0][1]
         candidates = [
             round(max_font_pt - 0.5 * i, 1)
             for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
         ]
 
-        target_pt = _MIN_FONT_PT
-        target_spacing_pt = _MIN_FONT_PT + 1.0
-
         if cell_w and cell_h_pt:
             for font_pt in candidates:
                 spacing_pt = font_pt + 1.0
                 vis = self._estimate_jianli_visual_lines(cell_w, font_pt)
                 if vis * spacing_pt <= cell_h_pt:
-                    target_pt = font_pt
-                    target_spacing_pt = spacing_pt
-                    print(
-                        f'[JianLi] 数据行={self._jianli_line_count}  字号={font_pt}pt'
-                        f'  行距={spacing_pt}pt  估算视觉行={vis}'
-                        f'  所需高度={vis * spacing_pt:.1f}pt  单元格高={cell_h_pt:.1f}pt  ✓'
-                    )
-                    break
-                print(
-                    f'[JianLi] 字号={font_pt}pt  行距={spacing_pt}pt'
-                    f'  估算视觉行={vis}  所需高度={vis * spacing_pt:.1f}pt > {cell_h_pt:.1f}pt  ✗'
-                )
+                    return font_pt, spacing_pt
+            return _MIN_FONT_PT, _MIN_FONT_PT + 1.0
         else:
             vis = self._jianli_line_count
             for line_limit, font_pt in _JIANLI_FONT_TIERS:
                 if vis <= line_limit:
-                    target_pt = font_pt
-                    target_spacing_pt = font_pt + 1.0
-                    break
-            else:
-                target_pt = _JIANLI_FONT_TIERS[-1][1]
-                target_spacing_pt = target_pt + 1.0
+                    return font_pt, font_pt + 1.0
+            last_pt = _JIANLI_FONT_TIERS[-1][1]
+            return last_pt, last_pt + 1.0
 
+    def _shrink_jianli_cell(self, doc) -> bool:
+        from docx.shared import Pt
+        from docx.enum.text import WD_LINE_SPACING
+
+        jianli_cells = self._find_jianli_cells(doc)
+        if not jianli_cells:
+            return False
+
+        cell_w = jianli_cells[0].width_emu
+        cell_h_pt = jianli_cells[0].height_pt
+        target_pt, target_spacing_pt = self._calc_jianli_target_font(cell_w, cell_h_pt)
+
+        max_font_pt = _JIANLI_FONT_TIERS[0][1]
         if target_pt >= max_font_pt:
             return False
 
-        # ── 第三步：应用字号与行距 ────────────────────────────────────────────────
         changed = False
         for info in jianli_cells:
             for para in info.cell.paragraphs:
@@ -638,12 +724,26 @@ class DocxExporter:
                     para.paragraph_format.line_spacing = Pt(target_spacing_pt)
         return changed
 
-    def _shrink_plain_cells(self, doc) -> bool:
-        """对毕业院校系及专业、现任职务、奖惩情况等单元格按宽高自动缩小字号。
+    def _calc_plain_cell_target_font(
+        self, text: str, cell_w_pt: float, cell_h_pt: float
+    ) -> tuple[float | None, float | None]:
+        """返回 (target_pt, target_sp_pt)；无需收缩时返回 (None, None)。"""
+        max_font_pt = _JIANLI_FONT_TIERS[0][1]
+        candidates = [
+            round(max_font_pt - 0.5 * i, 1)
+            for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
+        ]
+        avail_pt = max(cell_w_pt - 2 * _CELL_MARGIN_PT, 1.0)
+        for font_pt in candidates:
+            sp_pt = font_pt + 1.0
+            vis = max(1, math.ceil(_text_width_pt(text, font_pt) / avail_pt))
+            if vis * sp_pt <= cell_h_pt:
+                if font_pt >= max_font_pt:
+                    return None, None
+                return font_pt, sp_pt
+        return None, None
 
-        逻辑与 _shrink_jianli_cell 相同，区别在于这些单元格为单段落纯文本，
-        无悬挂缩进，直接用 ceil(文本宽度 / 单元格可用宽度) 估算视觉行数。
-        """
+    def _shrink_plain_cells(self, doc) -> bool:
         if not self._plain_cell_shrink:
             return False
 
@@ -651,23 +751,11 @@ class DocxExporter:
         from docx.enum.text import WD_LINE_SPACING
 
         target_set = set(self._plain_cell_shrink)
-        max_font_pt = _JIANLI_FONT_TIERS[0][1]
-        candidates = [
-            round(max_font_pt - 0.5 * i, 1)
-            for i in range(int((max_font_pt - _MIN_FONT_PT) / 0.5) + 1)
-        ]
-
         changed = False
-        seen: set[int] = set()
 
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
-                    # cid = id(cell._tc)
-                    # if cid in seen:
-                    #     continue
-                    # seen.add(cid)
-
                     for para in cell.paragraphs:
                         if not para.runs:
                             continue
@@ -675,28 +763,17 @@ class DocxExporter:
                         if not text or text not in target_set:
                             continue
 
-                        cell_w_emu = cell.width or 0
+                        cell_w_pt = (cell.width or 0) / _PT_PER_EMU
                         cell_h_emu = self._get_cell_height_emu(cell)
-                        cell_w_pt = cell_w_emu / _PT_PER_EMU
                         cell_h_pt = cell_h_emu / _PT_PER_EMU if cell_h_emu else 0.0
 
                         if not cell_w_pt or not cell_h_pt:
                             continue
 
-                        avail_pt = max(cell_w_pt - 2 * _CELL_MARGIN_PT, 1.0)
-
-                        target_pt = None
-                        target_sp_pt = None
-
-                        for font_pt in candidates:
-                            sp_pt = font_pt + 1.0
-                            vis = max(1, math.ceil(_text_width_pt(text, font_pt) / avail_pt))
-                            if vis * sp_pt <= cell_h_pt:
-                                target_pt = font_pt
-                                target_sp_pt = sp_pt
-                                break
-
-                        if target_pt is None or target_pt >= max_font_pt:
+                        target_pt, target_sp_pt = self._calc_plain_cell_target_font(
+                            text, cell_w_pt, cell_h_pt
+                        )
+                        if target_pt is None:
                             continue
 
                         for run in para.runs:
@@ -704,6 +781,90 @@ class DocxExporter:
                         para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
                         para.paragraph_format.line_spacing = Pt(target_sp_pt)
                         changed = True
+
+        return changed
+
+    def _merge_empty_degree_cells(self, doc) -> bool:
+        """当学位为空时，将学历单元格与下方的空学位单元格纵向合并并居中。
+
+        扫描所有表格，找到学历文本所在的单元格，检查其正下方同行列的
+        单元格是否为空（即学位无数据），若是则通过 vMerge 合并二者，
+        并将合并后的单元格内容横向+纵向居中。
+        """
+        if not self._edu_merge_xueli_texts:
+            return False
+
+        from lxml import etree
+
+        target_set = set(self._edu_merge_xueli_texts)
+        changed = False
+
+        for table in doc.tables:
+            tbl = table._tbl
+            trs = tbl.findall(f'{{{_W}}}tr')
+
+            for tr_idx, tr in enumerate(trs):
+                for tc in list(tr.findall(f'{{{_W}}}tc')):
+                    # 获取单元格内所有文本
+                    cell_text = ''.join(
+                        (node.text or '')
+                        for node in tc.iter(f'{{{_W}}}t')
+                    ).strip()
+
+                    if not cell_text or cell_text not in target_set:
+                        continue
+
+                    # 找到学历值单元格 → 确定其网格列
+                    col = _grid_col_of(tr, tc)
+
+                    # 在下方行中找同列单元格（学位单元格）
+                    for next_tr in trs[tr_idx + 1:]:
+                        next_tc = _tc_at_grid_col(next_tr, col)
+                        if next_tc is None:
+                            continue
+
+                        # 检查学位单元格是否为空
+                        next_text = ''.join(
+                            (node.text or '')
+                            for node in next_tc.iter(f'{{{_W}}}t')
+                        ).strip()
+
+                        if next_text:
+                            break  # 学位有内容，不合并
+
+                        # ── 对上方单元格设 vMerge restart + 居中 ──────────
+                        tc_pr = tc.find(f'{{{_W}}}tcPr')
+                        if tc_pr is None:
+                            tc_pr = etree.SubElement(tc, f'{{{_W}}}tcPr')
+
+                        vm = etree.SubElement(tc_pr, f'{{{_W}}}vMerge')
+                        vm.set(f'{{{_W}}}val', 'restart')
+
+                        # 纵向居中
+                        v_align = etree.SubElement(tc_pr, f'{{{_W}}}vAlign')
+                        v_align.set(f'{{{_W}}}val', 'center')
+
+                        # 横向居中：每个段落设 jc="center"
+                        for p in tc.findall(f'{{{_W}}}p'):
+                            pPr = p.find(f'{{{_W}}}pPr')
+                            if pPr is None:
+                                pPr = etree.Element(f'{{{_W}}}pPr')
+                                p.insert(0, pPr)
+                            jc = pPr.find(f'{{{_W}}}jc')
+                            if jc is None:
+                                jc = etree.SubElement(pPr, f'{{{_W}}}jc')
+                            jc.set(f'{{{_W}}}val', 'center')
+
+                        # ── 对下方空单元格设 vMerge continue ──────────────
+                        next_pr = next_tc.find(f'{{{_W}}}tcPr')
+                        if next_pr is None:
+                            next_pr = etree.SubElement(next_tc, f'{{{_W}}}tcPr')
+
+                        next_vm = etree.SubElement(next_pr, f'{{{_W}}}vMerge')
+                        next_vm.set(f'{{{_W}}}val', 'continue')
+
+                        changed = True
+                        break  # 只合并紧邻的第一行
 
         return changed
 

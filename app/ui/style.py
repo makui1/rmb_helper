@@ -9,13 +9,13 @@ _ASSETS = (Path(__file__).parent / 'assets').as_posix()
 QSS = f"""
 QMainWindow, QDialog {{
     background-color: #FFFFFF;
+    font-size: 13px;
 }}
 
 QWidget {{
     background-color: #FFFFFF;
     color: #1A1A1A;
     font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-    font-size: 13px;
 }}
 
 /* ── 自定义标题栏 ───────────────────────────────────────────────────── */
@@ -480,6 +480,41 @@ QPushButton#layoutToggleR:checked {{
     border-color: {ACCENT_HOVER};
 }}
 QPushButton#layoutToggleR:hover:!checked {{
+    background: #EEEDEA;
+}}
+
+/* ── 批量更新：方向切换（分段控件）────────────────────────────────────── */
+QPushButton#dirToggleL {{
+    border: 1px solid #C8C6C0;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    background: #FFFFFF;
+    color: #555550;
+    padding: 6px 20px;
+    font-size: 13px;
+}}
+QPushButton#dirToggleL:checked {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-color: {ACCENT_HOVER};
+}}
+QPushButton#dirToggleL:hover:!checked {{
+    background: #EEEDEA;
+}}
+QPushButton#dirToggleR {{
+    border: 1px solid #C8C6C0;
+    border-radius: 0 6px 6px 0;
+    background: #FFFFFF;
+    color: #555550;
+    padding: 6px 20px;
+    font-size: 13px;
+}}
+QPushButton#dirToggleR:checked {{
+    background: {ACCENT};
+    color: #ffffff;
+    border-color: {ACCENT_HOVER};
+}}
+QPushButton#dirToggleR:hover:!checked {{
     background: #EEEDEA;
 }}
 

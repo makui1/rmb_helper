@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
 from app.ui.main_window import MainWindow
 from app.core.single_instance import SingleInstance
 
@@ -16,6 +17,9 @@ def _parse_open_path(argv: list[str]) -> str | None:
 
 def main():
     app = QApplication(sys.argv)
+    font = app.font()
+    font.setPointSize(9)
+    app.setFont(font)
     app.setApplicationName('rmb_helper')
     open_path = _parse_open_path(sys.argv)
 

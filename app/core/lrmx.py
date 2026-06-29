@@ -1,3 +1,4 @@
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
@@ -56,6 +57,33 @@ class LrmxFile:
             for key, val in m.items():
                 child = ET.SubElement(item, key)
                 child.text = val
+
+    def normalize(self) -> None:
+        """将内容为空的叶子标签转为自闭合单标签（<tag/>），就地保存。
+
+        递归遍历 XML 树，对无子元素且文本为空（或纯空白）的标签，
+        将其 text 设为 None，使得序列化时输出 <tag/> 而非 <tag></tag>。
+        同时清理姓名字段中多余的空格（如 "张 三" → "张三"）。
+        """
+        def _norm(elem):
+            if len(elem) == 0:
+                if elem.text is not None and not elem.text.strip():
+                    elem.text = None
+                elif elem.tag == 'XingMing' and elem.text:
+                    # 删除姓名中的多余空格（如 "张 三" → "张三"）
+                    stripped = re.sub(r'\s+', '', elem.text)
+                    if stripped != elem.text:
+                        elem.text = stripped
+                elif elem.tag == 'ShenFenZheng' and elem.text:
+                    # 身份证号末尾 x 统一转为大写
+                    v = elem.text.strip()
+                    if v and v[-1] == 'x':
+                        elem.text = v[:-1] + 'X'
+            else:
+                for child in elem:
+                    _norm(child)
+        _norm(self._root)
+        self.save()
 
     @classmethod
     def create_new(cls) -> 'LrmxFile':

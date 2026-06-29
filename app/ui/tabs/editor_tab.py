@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFileDialog, QMessageBox, QSizePolicy,
     QFrame, QTabWidget,
 )
+from app.ui.utils import show_error, show_warning
 
 
 class _ScrollSafeCombo(QComboBox):
@@ -207,6 +208,55 @@ class _DocPane(QWidget):
         root.addWidget(scroll)
         self._layout_mode = mode
 
+    def _build_lb_basic_section(self, row) -> QWidget:
+        """layout_b 基本信息区（含照片右浮）。"""
+        basic_outer = QHBoxLayout()
+        basic_outer.setSpacing(16)
+        basic_outer.setContentsMargins(0, 0, 0, 0)
+        basic_col = QVBoxLayout()
+        basic_col.setSpacing(0)
+        basic_col.setContentsMargins(0, 0, 0, 0)
+        for lbl_text, w in [
+            ('姓名',    self._xing_ming),
+            ('性别',    self._xing_bie),
+            ('出生年月', self._chu_sheng),
+            ('民族',    self._min_zu),
+            ('籍贯',    self._ji_guan),
+            ('出生地',  self._chu_di),
+            ('入党时间', self._ru_dang),
+            ('参工时间', self._can_jia),
+            ('到龄时间', self._dao_ling),
+            ('健康状况', self._jian_kang),
+            ('专技职务', self._zhuan_ye),
+            ('熟悉专业', self._shu_xi),
+        ]:
+            basic_col.addWidget(row(lbl_text, w))
+        photo_right = QVBoxLayout()
+        photo_right.setContentsMargins(0, 0, 0, 0)
+        photo_right.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop)
+        photo_right.addStretch()
+        basic_outer.addLayout(basic_col, 1)
+        basic_outer.addLayout(photo_right, 0)
+        container = QWidget()
+        container.setLayout(basic_outer)
+        return container
+
+    def _build_lb_edu_section(self, sec, row) -> list:
+        """返回 layout_b 学历学位区的 widget 列表。"""
+        items = [sec('学历学位')]
+        for lbl_text, w in [
+            ('全日制学历', self._qrz_xueli),
+            ('全日制院校', self._qrz_xueli_yuan),
+            ('全日制学位', self._qrz_xuewei),
+            ('全日制院校', self._qrz_xuewei_yuan),
+            ('在职学历',  self._zzj_xueli),
+            ('在职院校',  self._zzj_xueli_yuan),
+            ('在职学位',  self._zzj_xuewei),
+            ('在职院校',  self._zzj_xuewei_yuan),
+        ]:
+            items.append(row(lbl_text, w))
+        return items
+
     def _build_layout_b(self) -> QScrollArea:
         """轻量分隔式布局：简历风格单列，各节下划线分隔，照片右浮。"""
         scroll = QScrollArea()
@@ -238,52 +288,12 @@ class _DocPane(QWidget):
             lay.addWidget(widget, 1)
             return frame
 
-        # ── 基本信息（照片右浮）
         col.addWidget(_sec('基本信息'))
-        basic_outer = QHBoxLayout()
-        basic_outer.setSpacing(16)
-        basic_outer.setContentsMargins(0, 0, 0, 0)
-        basic_col = QVBoxLayout()
-        basic_col.setSpacing(0)
-        basic_col.setContentsMargins(0, 0, 0, 0)
-        for lbl_text, w in [
-            ('姓名',    self._xing_ming),
-            ('性别',    self._xing_bie),
-            ('出生年月', self._chu_sheng),
-            ('民族',    self._min_zu),
-            ('籍贯',    self._ji_guan),
-            ('出生地',  self._chu_di),
-            ('入党时间', self._ru_dang),
-            ('参工时间', self._can_jia),
-            ('到龄时间', self._dao_ling),
-            ('健康状况', self._jian_kang),
-            ('专技职务', self._zhuan_ye),
-            ('熟悉专业', self._shu_xi),
-        ]:
-            basic_col.addWidget(_row(lbl_text, w))
-        photo_right = QVBoxLayout()
-        photo_right.setContentsMargins(0, 0, 0, 0)
-        photo_right.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignTop)
-        photo_right.addStretch()
-        basic_outer.addLayout(basic_col, 1)
-        basic_outer.addLayout(photo_right, 0)
-        col.addLayout(basic_outer)
+        col.addWidget(self._build_lb_basic_section(_row))
 
-        # ── 学历学位
-        col.addWidget(_sec('学历学位'))
-        for lbl_text, w in [
-            ('全日制学历', self._qrz_xueli),
-            ('全日制院校', self._qrz_xueli_yuan),
-            ('全日制学位', self._qrz_xuewei),
-            ('全日制院校', self._qrz_xuewei_yuan),
-            ('在职学历',  self._zzj_xueli),
-            ('在职院校',  self._zzj_xueli_yuan),
-            ('在职学位',  self._zzj_xuewei),
-            ('在职院校',  self._zzj_xuewei_yuan),
-        ]:
-            col.addWidget(_row(lbl_text, w))
+        for w in self._build_lb_edu_section(_sec, _row):
+            col.addWidget(w)
 
-        # ── 职务
         col.addWidget(_sec('职务'))
         for lbl_text, w in [
             ('现任职务', self._xian_ren),
@@ -292,27 +302,16 @@ class _DocPane(QWidget):
         ]:
             col.addWidget(_row(lbl_text, w))
 
-        # ── 简历
         col.addWidget(_sec('简历'))
         col.addWidget(self._jian_li, 1)
-
-        # ── 奖惩
         col.addWidget(_sec('奖惩情况'))
         col.addWidget(self._jiang_cheng)
-
-        # ── 年度考核
         col.addWidget(_sec('年度考核结果'))
         col.addWidget(self._nian_du)
-
-        # ── 任免理由
         col.addWidget(_sec('任免理由'))
         col.addWidget(self._ren_mian)
-
-        # ── 家庭主要成员
         col.addWidget(_sec('家庭主要成员'))
         col.addWidget(self._family, 1)
-
-        # ── 其他信息
         col.addWidget(_sec('其他信息'))
         for lbl_text, w in [
             ('呈报单位',  self._cheng_bao),
@@ -326,6 +325,144 @@ class _DocPane(QWidget):
 
         scroll.setWidget(container)
         return scroll
+
+    def _build_la_info_grid(self, lbl_cell) -> QHBoxLayout:
+        """基本信息网格 + 照片（水平布局）。"""
+        info_outer = QHBoxLayout()
+        info_outer.setSpacing(0)
+        info_outer.setContentsMargins(0, 0, 0, 0)
+        info_grid = QGridLayout()
+        info_grid.setSpacing(0)
+        info_grid.setContentsMargins(0, 0, 0, 0)
+        info_grid.setColumnStretch(1, 1)
+        info_grid.setColumnStretch(3, 1)
+        for (r, c, lbl_text, w) in [
+            (0, 0, '姓名',    self._xing_ming),
+            (0, 2, '性别',    self._xing_bie),
+            (1, 0, '出生年月', self._chu_sheng),
+            (1, 2, '民族',    self._min_zu),
+            (2, 0, '籍贯',    self._ji_guan),
+            (2, 2, '出生地',  self._chu_di),
+            (3, 0, '入党时间', self._ru_dang),
+            (3, 2, '参工时间', self._can_jia),
+            (4, 0, '到龄时间', self._dao_ling),
+            (4, 2, '健康状况', self._jian_kang),
+            (5, 0, '专技职务', self._zhuan_ye),
+            (5, 2, '熟悉专业', self._shu_xi),
+        ]:
+            info_grid.addWidget(lbl_cell(lbl_text), r, c)
+            info_grid.addWidget(w, r, c + 1)
+        info_outer.addLayout(info_grid, 1)
+        info_outer.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignCenter)
+        return info_outer
+
+    def _build_la_edu_grid(self, lbl_cell) -> QGridLayout:
+        """学历学位网格。"""
+        edu_grid = QGridLayout()
+        edu_grid.setSpacing(0)
+        edu_grid.setContentsMargins(0, 0, 0, 0)
+        edu_grid.setColumnMinimumWidth(0, 44)
+        edu_grid.setColumnMinimumWidth(1, 40)
+        edu_grid.setColumnStretch(2, 1)
+        edu_grid.setColumnMinimumWidth(3, 92)
+        edu_grid.setColumnStretch(4, 2)
+        for row, (type_lbl, kind_lbl, combo_w, yuan_w) in enumerate([
+            ('全日制', '学历', self._qrz_xueli,  self._qrz_xueli_yuan),
+            ('全日制', '学位', self._qrz_xuewei, self._qrz_xuewei_yuan),
+            ('在职',   '学历', self._zzj_xueli,  self._zzj_xueli_yuan),
+            ('在职',   '学位', self._zzj_xuewei, self._zzj_xuewei_yuan),
+        ]):
+            tl = lbl_cell(type_lbl, 44)
+            kl = lbl_cell(kind_lbl, 40)
+            yl = lbl_cell('毕业院校系及专业', 92)
+            edu_grid.addWidget(tl, row, 0)
+            edu_grid.addWidget(kl, row, 1)
+            edu_grid.addWidget(combo_w, row, 2)
+            edu_grid.addWidget(yl, row, 3)
+            edu_grid.addWidget(yuan_w, row, 4)
+        return edu_grid
+
+    def _build_la_pos_grid(self, lbl_cell) -> QGridLayout:
+        """职务网格。"""
+        pos_grid = QGridLayout()
+        pos_grid.setSpacing(0)
+        pos_grid.setContentsMargins(0, 0, 0, 0)
+        pos_grid.setColumnMinimumWidth(0, _LW2)
+        pos_grid.setColumnStretch(1, 1)
+        for r, (lbl_text, w) in enumerate([
+            ('现任职务', self._xian_ren),
+            ('拟任职务', self._ni_ren),
+            ('拟免职务', self._ni_mian),
+        ]):
+            pos_grid.addWidget(lbl_cell(lbl_text), r, 0)
+            pos_grid.addWidget(w, r, 1)
+        return pos_grid
+
+    def _build_la_bot_grid(self, lbl_cell) -> QGridLayout:
+        """底部信息网格。"""
+        bot_grid = QGridLayout()
+        bot_grid.setSpacing(0)
+        bot_grid.setContentsMargins(0, 0, 0, 0)
+        bot_grid.setColumnMinimumWidth(0, 80)
+        bot_grid.setColumnMinimumWidth(2, _LW2)
+        bot_grid.setColumnStretch(1, 1)
+        bot_grid.setColumnStretch(3, 1)
+        bot_grid.addWidget(lbl_cell('呈报单位', 80), 0, 0)
+        bot_grid.addWidget(self._cheng_bao, 0, 1, 1, 3)
+        bot_grid.addWidget(lbl_cell('改革前年龄', 80), 1, 0)
+        bot_grid.addWidget(self._gai_ge_nll, 1, 1, 1, 3)
+        bot_grid.addWidget(lbl_cell('身份证号', 80), 2, 0)
+        bot_grid.addWidget(self._shen_fen, 2, 1)
+        bot_grid.addWidget(lbl_cell('计算年龄'), 2, 2)
+        bot_grid.addWidget(self._ji_suan, 2, 3)
+        bot_grid.addWidget(lbl_cell('填表时间', 80), 3, 0)
+        bot_grid.addWidget(self._tian_biao_shi, 3, 1)
+        bot_grid.addWidget(lbl_cell('填表人'), 3, 2)
+        bot_grid.addWidget(self._tian_biao_ren, 3, 3)
+        return bot_grid
+
+    def _build_la_left(self, lbl_cell, sec_cell) -> QWidget:
+        """左栏容器：基本信息 + 学历学位 + 职务 + 简历。"""
+        left = QWidget()
+        left_lay = QVBoxLayout(left)
+        left_lay.setContentsMargins(0, 0, 0, 0)
+        left_lay.setSpacing(0)
+
+        left_lay.addWidget(sec_cell('基本信息'))
+        left_lay.addLayout(self._build_la_info_grid(lbl_cell))
+
+        left_lay.addWidget(sec_cell('学历学位'))
+        left_lay.addLayout(self._build_la_edu_grid(lbl_cell))
+
+        left_lay.addWidget(sec_cell('职务'))
+        left_lay.addLayout(self._build_la_pos_grid(lbl_cell))
+
+        left_lay.addWidget(sec_cell('简历'))
+        left_lay.addWidget(self._jian_li, 1)
+
+        left.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        return left
+
+    def _build_la_right(self, lbl_cell, sec_cell) -> QWidget:
+        """右栏容器：奖惩 + 考核 + 任免理由 + 家庭成员 + 底部信息。"""
+        right = QWidget()
+        right_lay = QVBoxLayout(right)
+        right_lay.setContentsMargins(0, 0, 0, 0)
+        right_lay.setSpacing(0)
+
+        right_lay.addWidget(sec_cell('奖惩情况'))
+        right_lay.addWidget(self._jiang_cheng)
+        right_lay.addWidget(sec_cell('年度考核结果'))
+        right_lay.addWidget(self._nian_du)
+        right_lay.addWidget(sec_cell('任免理由'))
+        right_lay.addWidget(self._ren_mian)
+        right_lay.addWidget(sec_cell('家庭主要成员'))
+        right_lay.addWidget(self._family, 1)
+        right_lay.addWidget(sec_cell('底部信息'))
+        right_lay.addLayout(self._build_la_bot_grid(lbl_cell))
+
+        right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        return right
 
     def _build_layout_a(self) -> QScrollArea:
         """严格表格式布局：全格线，双栏，标签宽度固定不换行。"""
@@ -354,136 +491,8 @@ class _DocPane(QWidget):
             w.setContentsMargins(6, 2, 6, 2)
             return w
 
-        # ── 左栏 ──────────────────────────────────────────────────────────
-        left = QWidget()
-        left_lay = QVBoxLayout(left)
-        left_lay.setContentsMargins(0, 0, 0, 0)
-        left_lay.setSpacing(0)
-
-        left_lay.addWidget(sec_cell('基本信息'))
-        info_outer = QHBoxLayout()
-        info_outer.setSpacing(0)
-        info_outer.setContentsMargins(0, 0, 0, 0)
-        info_grid = QGridLayout()
-        info_grid.setSpacing(0)
-        info_grid.setContentsMargins(0, 0, 0, 0)
-        # info_grid.setColumnMinimumWidth(0, _LW2)
-        # info_grid.setColumnMinimumWidth(2, _LW2)
-        info_grid.setColumnStretch(1, 1)
-        info_grid.setColumnStretch(3, 1)
-        info_grid.addWidget(lbl_cell('姓名'), 0, 0)
-        info_grid.addWidget(self._xing_ming, 0, 1)
-        info_grid.addWidget(lbl_cell('性别'), 0, 2)
-        info_grid.addWidget(self._xing_bie, 0, 3)
-        info_grid.addWidget(lbl_cell('出生年月'), 1, 0)
-        info_grid.addWidget(self._chu_sheng, 1, 1)
-        info_grid.addWidget(lbl_cell('民族'), 1, 2)
-        info_grid.addWidget(self._min_zu, 1, 3)
-        info_grid.addWidget(lbl_cell('籍贯'), 2, 0)
-        info_grid.addWidget(self._ji_guan, 2, 1)
-        info_grid.addWidget(lbl_cell('出生地'), 2, 2)
-        info_grid.addWidget(self._chu_di, 2, 3)
-        info_grid.addWidget(lbl_cell('入党时间'), 3, 0)
-        info_grid.addWidget(self._ru_dang, 3, 1)
-        info_grid.addWidget(lbl_cell('参工时间'), 3, 2)
-        info_grid.addWidget(self._can_jia, 3, 3)
-        info_grid.addWidget(lbl_cell('到龄时间'), 4, 0)
-        info_grid.addWidget(self._dao_ling, 4, 1)
-        info_grid.addWidget(lbl_cell('健康状况'), 4, 2)
-        info_grid.addWidget(self._jian_kang, 4, 3)
-        info_grid.addWidget(lbl_cell('专技职务'), 5, 0)
-        info_grid.addWidget(self._zhuan_ye, 5, 1)
-        info_grid.addWidget(lbl_cell('熟悉专业'), 5, 2)
-        info_grid.addWidget(self._shu_xi, 5, 3)
-        info_outer.addLayout(info_grid, 1)
-        info_outer.addWidget(self._photo, 0, Qt.AlignmentFlag.AlignCenter)
-        left_lay.addLayout(info_outer)
-
-        left_lay.addWidget(sec_cell('学历学位'))
-        edu_grid = QGridLayout()
-        edu_grid.setSpacing(0)
-        edu_grid.setContentsMargins(0, 0, 0, 0)
-        edu_grid.setColumnMinimumWidth(0, 44)
-        edu_grid.setColumnMinimumWidth(1, 40)
-        edu_grid.setColumnStretch(2, 1)
-        edu_grid.setColumnMinimumWidth(3, 92)
-        edu_grid.setColumnStretch(4, 2)
-        for row, (type_lbl, kind_lbl, combo_w, yuan_w) in enumerate([
-            ('全日制', '学历', self._qrz_xueli,  self._qrz_xueli_yuan),
-            ('全日制', '学位', self._qrz_xuewei, self._qrz_xuewei_yuan),
-            ('在职',   '学历', self._zzj_xueli,  self._zzj_xueli_yuan),
-            ('在职',   '学位', self._zzj_xuewei, self._zzj_xuewei_yuan),
-        ]):
-            tl = lbl_cell(type_lbl, 44)
-            kl = lbl_cell(kind_lbl, 40)
-            yl = lbl_cell('毕业院校系及专业', 92)
-            edu_grid.addWidget(tl, row, 0)
-            edu_grid.addWidget(kl, row, 1)
-            edu_grid.addWidget(combo_w, row, 2)
-            edu_grid.addWidget(yl, row, 3)
-            edu_grid.addWidget(yuan_w, row, 4)
-        left_lay.addLayout(edu_grid)
-
-        left_lay.addWidget(sec_cell('职务'))
-        pos_grid = QGridLayout()
-        pos_grid.setSpacing(0)
-        pos_grid.setContentsMargins(0, 0, 0, 0)
-        pos_grid.setColumnMinimumWidth(0, _LW2)
-        pos_grid.setColumnStretch(1, 1)
-        for r, (lbl_text, w) in enumerate([
-            ('现任职务', self._xian_ren),
-            ('拟任职务', self._ni_ren),
-            ('拟免职务', self._ni_mian),
-        ]):
-            pos_grid.addWidget(lbl_cell(lbl_text), r, 0)
-            pos_grid.addWidget(w, r, 1)
-        left_lay.addLayout(pos_grid)
-
-        left_lay.addWidget(sec_cell('简历'))
-        left_lay.addWidget(self._jian_li, 1)
-
-        left.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
-        outer.addWidget(left, 1)
-
-        # ── 右栏 ──────────────────────────────────────────────────────────
-        right = QWidget()
-        right_lay = QVBoxLayout(right)
-        right_lay.setContentsMargins(0, 0, 0, 0)
-        right_lay.setSpacing(0)
-
-        right_lay.addWidget(sec_cell('奖惩情况'))
-        right_lay.addWidget(self._jiang_cheng)
-        right_lay.addWidget(sec_cell('年度考核结果'))
-        right_lay.addWidget(self._nian_du)
-        right_lay.addWidget(sec_cell('任免理由'))
-        right_lay.addWidget(self._ren_mian)
-        right_lay.addWidget(sec_cell('家庭主要成员'))
-        right_lay.addWidget(self._family, 1)
-        right_lay.addWidget(sec_cell('底部信息'))
-
-        bot_grid = QGridLayout()
-        bot_grid.setSpacing(0)
-        bot_grid.setContentsMargins(0, 0, 0, 0)
-        bot_grid.setColumnMinimumWidth(0, 80)
-        bot_grid.setColumnMinimumWidth(2, _LW2)
-        bot_grid.setColumnStretch(1, 1)
-        bot_grid.setColumnStretch(3, 1)
-        bot_grid.addWidget(lbl_cell('呈报单位', 80), 0, 0)
-        bot_grid.addWidget(self._cheng_bao, 0, 1, 1, 3)
-        bot_grid.addWidget(lbl_cell('改革前年龄', 80), 1, 0)
-        bot_grid.addWidget(self._gai_ge_nll, 1, 1, 1, 3)
-        bot_grid.addWidget(lbl_cell('身份证号', 80), 2, 0)
-        bot_grid.addWidget(self._shen_fen, 2, 1)
-        bot_grid.addWidget(lbl_cell('计算年龄'), 2, 2)
-        bot_grid.addWidget(self._ji_suan, 2, 3)
-        bot_grid.addWidget(lbl_cell('填表时间', 80), 3, 0)
-        bot_grid.addWidget(self._tian_biao_shi, 3, 1)
-        bot_grid.addWidget(lbl_cell('填表人'), 3, 2)
-        bot_grid.addWidget(self._tian_biao_ren, 3, 3)
-        right_lay.addLayout(bot_grid)
-
-        right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
-        outer.addWidget(right, 1)
+        outer.addWidget(self._build_la_left(lbl_cell, sec_cell), 1)
+        outer.addWidget(self._build_la_right(lbl_cell, sec_cell), 1)
 
         scroll.setWidget(container)
         return scroll
@@ -692,7 +701,7 @@ class _DocPane(QWidget):
             self.dirty_changed.emit(False)
             return True
         except Exception as e:
-            QMessageBox.critical(self, '保存失败', str(e))
+            show_error(self, str(e))
             return False
 
     def save_as(self) -> bool:
@@ -713,7 +722,7 @@ class _DocPane(QWidget):
             self.path_changed.emit(path)
             return True
         except Exception as e:
-            QMessageBox.critical(self, '保存失败', str(e))
+            show_error(self, str(e))
             return False
 
     def is_dirty(self) -> bool:
@@ -838,26 +847,31 @@ class EditorTab(QWidget):
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(slot)
 
-    def _build_toolbar(self) -> QWidget:
-        bar = QWidget()
-        bar.setObjectName('editorToolbar')
-        bar.setFixedHeight(36)
-        lay = QHBoxLayout(bar)
-        lay.setContentsMargins(10, 4, 10, 4)
-        lay.setSpacing(6)
+    def _build_toolbar_file_area(self, btn) -> list:
+        """返回文件操作按钮区 widget 列表。btn 为按钮构造函数。"""
+        self._open_btn   = btn('打开', '打开 lrmx 文件（可多选）')
+        self._save_btn   = btn('保存', '保存当前文件')
+        self._save_btn.setObjectName('primary')
+        self._saveas_btn = btn('另存为…', '另存为新文件')
+        self._export_btn = btn('导出 PDF', '导出为 PDF 文件')
+        self._export_btn.setObjectName('secondary')
+        self._format_btn = btn('格式化', '将 XML 空标签转为自闭合格式')
+        self._print_btn  = btn('打印', '打印预览并打印')
+        self._close_btn  = btn('关闭', '关闭当前标签页')
 
-        self._path_lbl = QLabel('未打开文件')
-        self._path_lbl.setStyleSheet('color: #888; font-size: 11px;')
-        lay.addWidget(self._path_lbl, 1)
+        self._open_btn.clicked.connect(self._on_open_btn)
+        self._save_btn.clicked.connect(self._on_save_btn)
+        self._saveas_btn.clicked.connect(self._on_saveas_btn)
+        self._export_btn.clicked.connect(self._on_export_pdf)
+        self._format_btn.clicked.connect(self._on_format_btn)
+        self._print_btn.clicked.connect(self._on_print_btn)
+        self._close_btn.clicked.connect(lambda: self._close_tab(self._tabs.currentIndex()))
 
-        def _btn(text: str, tooltip: str = '') -> QPushButton:
-            b = QPushButton(text)
-            b.setFixedHeight(26)
-            if tooltip:
-                b.setToolTip(tooltip)
-            return b
+        for b in [self._save_btn, self._saveas_btn, self._format_btn,
+                  self._export_btn, self._print_btn, self._close_btn]:
+            b.setEnabled(False)
 
-        def _sep() -> QFrame:
+        def sep():
             f = QFrame()
             f.setFrameShape(QFrame.Shape.VLine)
             f.setFrameShadow(QFrame.Shadow.Sunken)
@@ -865,41 +879,13 @@ class EditorTab(QWidget):
             f.setStyleSheet('color: #D0CEC8;')
             return f
 
-        self._open_btn   = _btn('打开', '打开 lrmx 文件（可多选）')
+        return [self._open_btn, sep(),
+                self._save_btn, self._saveas_btn, self._format_btn, sep(),
+                self._export_btn, self._print_btn, sep(),
+                self._close_btn]
 
-        self._save_btn   = _btn('保存', '保存当前文件')
-        self._save_btn.setObjectName('primary')
-        self._saveas_btn = _btn('另存为…', '另存为新文件')
-
-        self._export_btn = _btn('导出 PDF', '导出为 PDF 文件')
-        self._export_btn.setObjectName('secondary')
-        self._print_btn  = _btn('打印', '打印预览并打印')
-
-        self._close_btn  = _btn('关闭', '关闭当前标签页')
-
-        self._open_btn.clicked.connect(self._on_open_btn)
-        self._save_btn.clicked.connect(self._on_save_btn)
-        self._saveas_btn.clicked.connect(self._on_saveas_btn)
-        self._export_btn.clicked.connect(self._on_export_pdf)
-        self._print_btn.clicked.connect(self._on_print_btn)
-        self._close_btn.clicked.connect(lambda: self._close_tab(self._tabs.currentIndex()))
-
-        lay.addWidget(self._open_btn)
-        lay.addWidget(_sep())
-        lay.addWidget(self._save_btn)
-        lay.addWidget(self._saveas_btn)
-        lay.addWidget(_sep())
-        lay.addWidget(self._export_btn)
-        lay.addWidget(self._print_btn)
-        lay.addWidget(_sep())
-        lay.addWidget(self._close_btn)
-
-        for b in [self._save_btn, self._saveas_btn, self._export_btn,
-                  self._print_btn, self._close_btn]:
-            b.setEnabled(False)
-
-        # 布局切换分段控件
-        lay.addSpacing(10)
+    def _build_toolbar_layout_toggle(self) -> list:
+        """返回布局切换按钮区的 widget 列表。"""
         self._layout_b_btn = QPushButton('轻量')
         self._layout_b_btn.setObjectName('layoutToggleL')
         self._layout_b_btn.setFixedHeight(24)
@@ -920,8 +906,33 @@ class EditorTab(QWidget):
         self._layout_b_btn.setChecked(current_mode == 'b')
         self._layout_a_btn.setChecked(current_mode == 'a')
 
-        lay.addWidget(self._layout_b_btn)
-        lay.addWidget(self._layout_a_btn)
+        return [self._layout_b_btn, self._layout_a_btn]
+
+    def _build_toolbar(self) -> QWidget:
+        bar = QWidget()
+        bar.setObjectName('editorToolbar')
+        bar.setFixedHeight(36)
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(10, 4, 10, 4)
+        lay.setSpacing(6)
+
+        self._path_lbl = QLabel('未打开文件')
+        self._path_lbl.setStyleSheet('color: #888; font-size: 11px;')
+        lay.addWidget(self._path_lbl, 1)
+
+        def _btn(text: str, tooltip: str = '') -> QPushButton:
+            b = QPushButton(text)
+            b.setFixedHeight(26)
+            if tooltip:
+                b.setToolTip(tooltip)
+            return b
+
+        for w in self._build_toolbar_file_area(_btn):
+            lay.addWidget(w)
+
+        lay.addSpacing(10)
+        for w in self._build_toolbar_layout_toggle():
+            lay.addWidget(w)
 
         return bar
 
@@ -978,7 +989,7 @@ class EditorTab(QWidget):
         try:
             pane.load(path)
         except Exception as e:
-            QMessageBox.critical(self, '打开失败', str(e))
+            show_error(self, str(e))
             return
         idx = self._tabs.addTab(pane, Path(path).name)
         self._tabs.setCurrentIndex(idx)
@@ -1030,7 +1041,7 @@ class EditorTab(QWidget):
         pane = self._active_pane()
         has = pane is not None
         for b in [self._close_btn, self._save_btn, self._saveas_btn,
-                  self._export_btn, self._print_btn]:
+                  self._format_btn, self._export_btn, self._print_btn]:
             b.setEnabled(has)
         self._path_lbl.setText(
             (pane.current_path() or '新文件') if pane else '未打开文件'
@@ -1054,6 +1065,25 @@ class EditorTab(QWidget):
         if pane:
             pane.save_as()
 
+    def _on_format_btn(self) -> None:
+        pane = self._active_pane()
+        if not pane:
+            return
+        cp = pane.current_path()
+        if not cp:
+            QMessageBox.information(self, '提示', '请先保存文件再格式化。')
+            return
+        # 确保最新改动已写入磁盘
+        if not pane.save():
+            return
+        try:
+            LrmxFile(Path(cp)).normalize()
+        except Exception as e:
+            show_error(self, str(e))
+            return
+        # 重新加载以显示格式化后的内容
+        pane.load(cp)
+
     def _on_export_pdf(self) -> None:
         pane = self._active_pane()
         if pane is None:
@@ -1068,8 +1098,7 @@ class EditorTab(QWidget):
             from app.core.pdf_exporter import PdfExporter, detect_engine, PdfEngine
             engine = detect_engine()
             if engine == PdfEngine.NONE:
-                QMessageBox.warning(self, '无法导出',
-                    '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
+                show_warning(self, '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
                 return
             cp = pane.current_path()
             if cp:
@@ -1094,7 +1123,7 @@ class EditorTab(QWidget):
                 tmp_docx.unlink(missing_ok=True)
             QMessageBox.information(self, '导出成功', f'已保存至：\n{dest}')
         except Exception as e:
-            QMessageBox.critical(self, '导出失败', str(e))
+            show_error(self, str(e))
 
     def _on_print_btn(self) -> None:
         pane = self._active_pane()
@@ -1111,8 +1140,7 @@ class EditorTab(QWidget):
             from app.ui.widgets.print_preview import PrintPreviewDialog
             engine = detect_engine()
             if engine == PdfEngine.NONE:
-                QMessageBox.warning(self, '无法打印',
-                    '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
+                show_warning(self, '未检测到可用的 PDF 转换工具（WPS / Word / LibreOffice）。')
                 return
             tpl = get_template_path()
             docx_bytes = DocxExporter(tpl).export_bytes(lrmx)
@@ -1128,7 +1156,7 @@ class EditorTab(QWidget):
             dlg = PrintPreviewDialog(tmp_pdf, self)
             dlg.exec()
         except Exception as e:
-            QMessageBox.critical(self, '打印失败', str(e))
+            show_error(self, str(e))
 
     # ── drag & drop ──────────────────────────────────────────────────────────
 

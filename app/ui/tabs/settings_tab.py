@@ -4,9 +4,10 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QListWidgetItem,
-    QInputDialog, QMessageBox,
+    QInputDialog, QMessageBox, QScrollArea, QTabWidget,
     QTableWidget, QTableWidgetItem, QHeaderView, QFrame,
     QDialog, QLineEdit, QRadioButton, QButtonGroup,
+    QPlainTextEdit, QApplication,
 )
 from PySide6.QtCore import QSettings, Qt, QSize
 from PySide6.QtGui import QIcon
@@ -14,6 +15,8 @@ from app.utils.naming import PRESETS
 from app.core.verify_handler import LRMX_FIELDS, DEFAULT_FIELD_ALIASES
 from app.core import file_assoc
 from app.core.compare_rules import CompareRule, rules_to_json, rules_from_json, validate_date_format, validate_regex_pattern
+from app.core.converters import get_all_converters, save_custom_converters, execute_converter
+from app.ui.utils import show_error, show_warning
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
@@ -193,6 +196,194 @@ class _CompareRuleDialog(QDialog):
         return self._result
 
 
+class _ConverterDialog(QDialog):
+    """转换器编辑弹窗（新建/编辑），替代内联编辑器。"""
+
+    def __init__(self, converter: dict | None = None, existing_names: list[str] | None = None,
+                 parent=None):
+        super().__init__(parent)
+        self._initial = converter
+        self._existing_names = existing_names or []
+        self._result: dict | None = None
+        self.setWindowTitle('编辑转换器' if converter else '新增转换器')
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+        self._build_ui()
+        if converter:
+            self._load(converter)
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
+
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel('名称'))
+        self._name_edit = QLineEdit()
+        name_row.addWidget(self._name_edit)
+        layout.addLayout(name_row)
+
+        code_row = QHBoxLayout()
+        code_label = QLabel('代码（必须定义 convert(value: str) -> str 函数）')
+        code_row.addWidget(code_label, 1)
+        ai_btn = QPushButton('📋 复制AI提示词示例')
+        ai_btn.setToolTip('将转换器编写提示词复制到剪贴板，可粘贴到 AI 对话中生成代码')
+        ai_btn.setStyleSheet('color: #D85A30; font-size: 12px;')
+        ai_btn.clicked.connect(self._copy_ai_prompt)
+        code_row.addWidget(ai_btn)
+        layout.addLayout(code_row)
+
+        self._code_edit = QPlainTextEdit()
+        self._code_edit.setPlaceholderText(
+            'def convert(value: str) -> str:\n'
+            '    # 在此编写转换逻辑\n'
+            '    return value'
+        )
+        self._code_edit.setMinimumHeight(150)
+        self._code_edit.setStyleSheet(
+            'font-family: "Cascadia Code", "Consolas", monospace; font-size: 13px;'
+        )
+        layout.addWidget(self._code_edit, 1)
+
+        # 测试行
+        test_row = QHBoxLayout()
+        test_row.addWidget(QLabel('测试'))
+        self._test_input = QLineEdit()
+        self._test_input.setPlaceholderText('输入测试值…')
+        self._test_input.textChanged.connect(self._on_test)
+        test_row.addWidget(self._test_input, 1)
+        test_row.addWidget(QLabel('→'))
+        self._test_result = QLabel('（结果）')
+        self._test_result.setStyleSheet('color: #1E7A3A; font-weight: bold;')
+        test_row.addWidget(self._test_result)
+        layout.addLayout(test_row)
+
+        # 错误提示
+        self._error_lbl = QLabel('')
+        self._error_lbl.setStyleSheet('color: #B02020; font-size: 11px;')
+        self._error_lbl.hide()
+        layout.addWidget(self._error_lbl)
+
+        # 保存/取消
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton('取消')
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton('保存')
+        save_btn.setObjectName('primary')
+        save_btn.clicked.connect(self._save)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+    def _copy_ai_prompt(self):
+        """将 AI 提示词示例复制到剪贴板。"""
+        prompt = (
+            '请帮我写一个 Python 转换函数，用于将任免表（LRMX）字段值转换为名册（Excel）中的目标格式。\n'
+            '\n'
+            '要求：\n'
+            '1. 必须定义一个名为 convert 的函数，签名固定为：def convert(value: str) -> str\n'
+            '2. 输入 value 是任免表中的原始字段值（字符串类型）\n'
+            '3. 返回值是转换后写入 Excel 的值（也必须是字符串）\n'
+            '4. 只使用 Python 内置函数，不能导入第三方库\n'
+            '5. 如果转换失败或值为空，直接返回原值 value\n'
+            '\n'
+            '我的转换需求：【在这里用自然语言描述你的转换逻辑，例如：\n'
+            '  - "把日期从 yyyyMMdd 格式转为 yyyy.MM.dd 格式"\n'
+            '  - "把性别字段的"男"转为"1"，"女"转为"2""\n'
+            '  - "去掉身份证号中的空格和特殊字符"\n'
+            '  - "把籍贯中的省市简称替换为全称，如"京"→"北京""\n'
+            '】\n'
+            '\n'
+            '以下是系统内置的转换器示例，可供参考：\n'
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+            '# 示例1：日期格式转换 yyyyMM → yyyy.MM\n'
+            'def convert(value: str) -> str:\n'
+            '    v = value.strip()\n'
+            '    if len(v) == 6 and v.isdigit():\n'
+            '        return f"{v[:4]}.{v[4:]}"\n'
+            '    return value\n'
+            '\n'
+            '# 示例2：性别映射 男→1 女→0\n'
+            'def convert(value: str) -> str:\n'
+            '    v = value.strip()\n'
+            '    if v in ("男", "男性"):\n'
+            '        return "1"\n'
+            '    elif v in ("女", "女性"):\n'
+            '        return "0"\n'
+            '    return value\n'
+            '\n'
+            '# 示例3：去除所有空格\n'
+            'def convert(value: str) -> str:\n'
+            '    return value.replace(" ", "").replace("\\u3000", "")\n'
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n'
+            '\n'
+            '请根据我的需求写出对应的 convert 函数，只输出代码，不需要额外解释。'
+        )
+        QApplication.clipboard().setText(prompt)
+        QMessageBox.information(
+            self, '已复制',
+            'AI 提示词已复制到剪贴板。\n\n'
+            '打开任意 AI 工具（如 ChatGPT、Claude、通义千问等），\n'
+            '粘贴后替换【我的转换需求】部分，即可生成转换器代码。'
+        )
+
+    def _load(self, converter: dict):
+        self._name_edit.setText(converter.get('name', ''))
+        self._code_edit.setPlainText(converter.get('code', ''))
+
+    def _save(self):
+        name = self._name_edit.text().strip()
+        code = self._code_edit.toPlainText().strip()
+        if not name:
+            self._show_error('名称不能为空')
+            return
+        if not code:
+            self._show_error('代码不能为空')
+            return
+        if 'def convert' not in code:
+            self._show_error('代码中必须包含 def convert 函数定义')
+            return
+        # 验证语法
+        try:
+            compile(code, '<converter>', 'exec')
+        except SyntaxError as e:
+            self._show_error(f'语法错误: {e}')
+            return
+
+        # 检查重名
+        if name in self._existing_names:
+            self._show_error(f'名称「{name}」已被使用')
+            return
+
+        self._error_lbl.hide()
+        self._result = {'name': name, 'code': code, 'builtin': False}
+        self.accept()
+
+    def _show_error(self, msg: str):
+        self._error_lbl.setText(msg)
+        self._error_lbl.show()
+
+    def _on_test(self, text: str):
+        if not text:
+            self._test_result.setText('（结果）')
+            self._test_result.setStyleSheet('color: #1E7A3A; font-weight: bold;')
+            return
+        code = self._code_edit.toPlainText().strip()
+        if not code:
+            return
+        try:
+            result = execute_converter(code, text)
+            self._test_result.setText(result)
+            self._test_result.setStyleSheet('color: #1E7A3A; font-weight: bold;')
+        except Exception as e:
+            self._test_result.setText(f'错误: {e}')
+            self._test_result.setStyleSheet('color: #B02020;')
+
+    def result(self) -> dict | None:
+        return self._result
+
+
 class SettingsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -202,45 +393,109 @@ class SettingsTab(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(16)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # 命名规则预设
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        content = QWidget()
+        cv = QVBoxLayout(content)
+        cv.setContentsMargins(24, 20, 24, 20)
+        cv.setSpacing(16)
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # QTabWidget — 三个子标签页
+        # ═══════════════════════════════════════════════════════════════════════
+        tabs = QTabWidget()
+
+        # ── Tab 0: 通用 ─────────────────────────────────────────────────────
+        tab_general = QWidget()
+        tg = QVBoxLayout(tab_general)
+        tg.setContentsMargins(16, 16, 16, 16)
+        tg.setSpacing(16)
+
         rule_label = QLabel('命名规则预设')
         rule_label.setObjectName('sectionTitle')
-        layout.addWidget(rule_label)
+        tg.addWidget(rule_label)
+
+        rule_sub = QLabel('任免表文件命名模板，可用字段：{XingMing} {ShenFenZheng} {XianRenZhiWu} 等')
+        rule_sub.setStyleSheet('color: #888880; font-size: 12px;')
+        rule_sub.setWordWrap(True)
+        tg.addWidget(rule_sub)
 
         self._rule_list = QListWidget()
         self._rule_list.setObjectName('fileList')
-        self._rule_list.setMaximumHeight(160)
-        layout.addWidget(self._rule_list)
+        self._rule_list.setMaximumHeight(200)
+        tg.addWidget(self._rule_list)
 
         rule_btns = QHBoxLayout()
-        add_btn = QPushButton('新增')
-        add_btn.clicked.connect(self._add_rule)
-        edit_btn = QPushButton('编辑')
-        edit_btn.clicked.connect(self._edit_rule)
-        del_btn = QPushButton('删除')
-        del_btn.clicked.connect(self._delete_rule)
-        rule_btns.addWidget(add_btn)
-        rule_btns.addWidget(edit_btn)
-        rule_btns.addWidget(del_btn)
+        self._add_rule_btn = QPushButton()
+        self._add_rule_btn.setIcon(QIcon(str(_ASSETS / 'add-btn.svg')))
+        self._add_rule_btn.setIconSize(QSize(16, 16))
+        self._add_rule_btn.setToolTip('新增规则')
+        self._add_rule_btn.setFixedSize(28, 28)
+        self._add_rule_btn.clicked.connect(self._add_rule)
+        self._edit_rule_btn = QPushButton()
+        self._edit_rule_btn.setIcon(QIcon(str(_ASSETS / 'edit.svg')))
+        self._edit_rule_btn.setIconSize(QSize(16, 16))
+        self._edit_rule_btn.setToolTip('编辑规则')
+        self._edit_rule_btn.setFixedSize(28, 28)
+        self._edit_rule_btn.clicked.connect(self._edit_rule)
+        self._del_rule_btn = QPushButton()
+        self._del_rule_btn.setIcon(QIcon(str(_ASSETS / 'delete-btn.svg')))
+        self._del_rule_btn.setIconSize(QSize(16, 16))
+        self._del_rule_btn.setToolTip('删除规则')
+        self._del_rule_btn.setFixedSize(28, 28)
+        self._del_rule_btn.clicked.connect(self._delete_rule)
+        rule_btns.addWidget(self._add_rule_btn)
+        rule_btns.addWidget(self._edit_rule_btn)
+        rule_btns.addWidget(self._del_rule_btn)
         rule_btns.addStretch()
-        layout.addLayout(rule_btns)
+        tg.addLayout(rule_btns)
 
-        # 核验字段自动匹配
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep)
+        # 文件关联（仅 Windows）
+        if file_assoc.supported():
+            tg.addSpacing(12)
+            assoc_sep = QFrame()
+            assoc_sep.setFrameShape(QFrame.Shape.HLine)
+            tg.addWidget(assoc_sep)
+
+            assoc_label = QLabel('文件关联')
+            assoc_label.setObjectName('sectionTitle')
+            tg.addWidget(assoc_label)
+
+            assoc_sub = QLabel('关联后，在资源管理器中双击 .lrmx 文件即可用本工具打开。仅影响当前用户，无需管理员权限。')
+            assoc_sub.setStyleSheet('color: #888880; font-size: 12px;')
+            assoc_sub.setWordWrap(True)
+            tg.addWidget(assoc_sub)
+
+            assoc_row = QHBoxLayout()
+            self._assoc_btn = QPushButton()
+            self._assoc_btn.clicked.connect(self._toggle_assoc)
+            assoc_row.addWidget(self._assoc_btn)
+            assoc_row.addStretch()
+            tg.addLayout(assoc_row)
+            self._refresh_assoc_btn()
+
+        tg.addStretch()
+        tabs.addTab(tab_general, '通用')
+
+        # ── Tab 1: 核验 ─────────────────────────────────────────────────────
+        tab_verify = QWidget()
+        tv = QVBoxLayout(tab_verify)
+        tv.setContentsMargins(16, 16, 16, 16)
+        tv.setSpacing(16)
 
         alias_label = QLabel('核验字段自动匹配')
         alias_label.setObjectName('sectionTitle')
-        layout.addWidget(alias_label)
+        tv.addWidget(alias_label)
 
         alias_sub = QLabel('加载 Excel 文件后，自动将匹配的表头映射到对应任免表字段。多个关键词用逗号分隔。')
         alias_sub.setStyleSheet('color: #888880; font-size: 12px;')
         alias_sub.setWordWrap(True)
-        layout.addWidget(alias_sub)
+        tv.addWidget(alias_sub)
 
         self._alias_table = QTableWidget(len(LRMX_FIELDS), 3)
         self._alias_table.setHorizontalHeaderLabels(['字段名', '任免表字段', 'Excel 匹配关键词（逗号分隔）'])
@@ -248,7 +503,7 @@ class SettingsTab(QWidget):
         self._alias_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self._alias_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self._alias_table.verticalHeader().setVisible(False)
-        self._alias_table.setMinimumHeight(240)
+        self._alias_table.setMinimumHeight(300)
         for i, (tag, display) in enumerate(LRMX_FIELDS):
             display_item = QTableWidgetItem(display)
             display_item.setFlags(display_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -260,54 +515,26 @@ class SettingsTab(QWidget):
             self._alias_table.setItem(i, 0, display_item)
             self._alias_table.setItem(i, 1, tag_item)
             self._alias_table.setItem(i, 2, alias_item)
-        layout.addWidget(self._alias_table)
+        tv.addWidget(self._alias_table)
 
-        save_btn = QPushButton('保存设置')
-        save_btn.setObjectName('primary')
-        save_btn.clicked.connect(self._save)
-        layout.addWidget(save_btn)
-
-        # 文件关联（仅 Windows）
-        if file_assoc.supported():
-            assoc_sep = QFrame()
-            assoc_sep.setFrameShape(QFrame.Shape.HLine)
-            layout.addWidget(assoc_sep)
-
-            assoc_label = QLabel('文件关联')
-            assoc_label.setObjectName('sectionTitle')
-            layout.addWidget(assoc_label)
-
-            assoc_sub = QLabel('关联后，在资源管理器中双击 .lrmx 文件即可用本工具打开。仅影响当前用户，无需管理员权限。')
-            assoc_sub.setStyleSheet('color: #888880; font-size: 12px;')
-            assoc_sub.setWordWrap(True)
-            layout.addWidget(assoc_sub)
-
-            assoc_row = QHBoxLayout()
-            self._assoc_btn = QPushButton()
-            self._assoc_btn.clicked.connect(self._toggle_assoc)
-            assoc_row.addWidget(self._assoc_btn)
-            assoc_row.addStretch()
-            layout.addLayout(assoc_row)
-            self._refresh_assoc_btn()
-
-        # ── 比较规则 ──────────────────────────────────────────────────────────
-        sep_cr = QFrame()
-        sep_cr.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(sep_cr)
+        tv.addSpacing(8)
+        cr_sep = QFrame()
+        cr_sep.setFrameShape(QFrame.Shape.HLine)
+        tv.addWidget(cr_sep)
 
         cr_title = QLabel('比较规则')
         cr_title.setObjectName('sectionTitle')
-        layout.addWidget(cr_title)
+        tv.addWidget(cr_title)
 
         cr_sub = QLabel('核验时可为每个字段指定比较规则，允许格式不同但语义相同的值被判定为一致。')
         cr_sub.setStyleSheet('color: #888880; font-size: 12px;')
         cr_sub.setWordWrap(True)
-        layout.addWidget(cr_sub)
+        tv.addWidget(cr_sub)
 
         self._compare_rule_list = QListWidget()
-        self._compare_rule_list.setMaximumHeight(140)
+        self._compare_rule_list.setMaximumHeight(200)
         self._compare_rule_list.currentRowChanged.connect(self._refresh_rule_btns)
-        layout.addWidget(self._compare_rule_list)
+        tv.addWidget(self._compare_rule_list)
 
         rule_btn_row = QHBoxLayout()
         self._add_cr_btn = QPushButton()
@@ -334,9 +561,83 @@ class SettingsTab(QWidget):
         rule_btn_row.addWidget(self._edit_cr_btn)
         rule_btn_row.addWidget(self._del_cr_btn)
         rule_btn_row.addStretch()
-        layout.addLayout(rule_btn_row)
+        tv.addLayout(rule_btn_row)
 
-        layout.addStretch()
+        tv.addStretch()
+        tabs.addTab(tab_verify, '核验')
+
+        # ── Tab 2: 转换器 ───────────────────────────────────────────────────
+        tab_conv = QWidget()
+        tc = QVBoxLayout(tab_conv)
+        tc.setContentsMargins(16, 16, 16, 16)
+        tc.setSpacing(16)
+
+        conv_title = QLabel('转换器管理')
+        conv_title.setObjectName('sectionTitle')
+        tc.addWidget(conv_title)
+
+        conv_sub = QLabel(
+            'LRMX→Excel 更新时可选用转换器对字段值进行格式转换。'
+            '内置转换器不可编辑删除。自定义转换器可编写 Python 代码。'
+        )
+        conv_sub.setStyleSheet('color: #888880; font-size: 12px;')
+        conv_sub.setWordWrap(True)
+        tc.addWidget(conv_sub)
+
+        self._converter_list = QListWidget()
+        self._converter_list.setMaximumHeight(250)
+        self._converter_list.currentRowChanged.connect(self._on_converter_selected)
+        tc.addWidget(self._converter_list)
+
+        conv_btn_row = QHBoxLayout()
+        self._add_conv_btn = QPushButton()
+        self._add_conv_btn.setIcon(QIcon(str(_ASSETS / 'add-btn.svg')))
+        self._add_conv_btn.setIconSize(QSize(16, 16))
+        self._add_conv_btn.setToolTip('新建转换器')
+        self._add_conv_btn.setFixedSize(28, 28)
+        self._add_conv_btn.clicked.connect(self._add_converter)
+        self._edit_conv_btn = QPushButton()
+        self._edit_conv_btn.setIcon(QIcon(str(_ASSETS / 'edit.svg')))
+        self._edit_conv_btn.setIconSize(QSize(16, 16))
+        self._edit_conv_btn.setToolTip('编辑转换器')
+        self._edit_conv_btn.setFixedSize(28, 28)
+        self._edit_conv_btn.setEnabled(False)
+        self._edit_conv_btn.clicked.connect(self._edit_converter)
+        self._del_conv_btn = QPushButton()
+        self._del_conv_btn.setIcon(QIcon(str(_ASSETS / 'delete-btn.svg')))
+        self._del_conv_btn.setIconSize(QSize(16, 16))
+        self._del_conv_btn.setToolTip('删除转换器')
+        self._del_conv_btn.setFixedSize(28, 28)
+        self._del_conv_btn.setEnabled(False)
+        self._del_conv_btn.clicked.connect(self._delete_converter)
+        conv_btn_row.addWidget(self._add_conv_btn)
+        conv_btn_row.addWidget(self._edit_conv_btn)
+        conv_btn_row.addWidget(self._del_conv_btn)
+        conv_btn_row.addStretch()
+        tc.addLayout(conv_btn_row)
+
+        tc.addStretch()
+        tabs.addTab(tab_conv, '转换器')
+
+        # ═══════════════════════════════════════════════════════════════════════
+
+        cv.addWidget(tabs)
+
+        # 保存 / 恢复默认（在 QScrollArea 之外，始终可见）
+        save_row = QHBoxLayout()
+        reset_btn = QPushButton('恢复默认设置')
+        reset_btn.setToolTip('清除所有设置并恢复为默认值')
+        reset_btn.clicked.connect(self._reset_defaults)
+        save_row.addWidget(reset_btn)
+        save_row.addStretch()
+        save_btn = QPushButton('保存设置')
+        save_btn.setObjectName('primary')
+        save_btn.clicked.connect(self._save)
+        save_row.addWidget(save_btn)
+        cv.addLayout(save_row)
+
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
 
     def _refresh_assoc_btn(self):
         registered = file_assoc.is_registered()
@@ -357,7 +658,7 @@ class SettingsTab(QWidget):
                     self, '关联成功',
                     '已关联 .lrmx 文件。\n现在双击 .lrmx 文件即可用本工具打开。')
         except Exception as e:
-            QMessageBox.critical(self, '操作失败', f'修改文件关联失败：\n{e}')
+            show_error(self, f'修改文件关联失败：\n{e}')
         self._refresh_assoc_btn()
 
     def _add_rule(self):
@@ -405,6 +706,8 @@ class SettingsTab(QWidget):
         self._compare_rules: list[CompareRule] = rules_from_json(raw_cr)
         self._refresh_compare_rule_list()
 
+        self._load_converters()
+
     def _save(self):
         rules = [self._rule_list.item(i).text() for i in range(self._rule_list.count())]
         self._settings.setValue('naming_rules', rules)
@@ -420,6 +723,26 @@ class SettingsTab(QWidget):
         self._settings.setValue('compare_rules', rules_to_json(self._compare_rules))
 
         QMessageBox.information(self, '保存成功', '设置已保存。')
+
+    def _reset_defaults(self):
+        reply = QMessageBox.warning(
+            self, '恢复默认设置',
+            '确定要恢复所有设置为默认值吗？\n\n'
+            '此操作将清除：\n'
+            '  · 命名规则预设\n'
+            '  · 核验字段自动匹配关键词\n'
+            '  · 比较规则\n'
+            '  · 自定义转换器\n\n'
+            '此操作不可撤销。',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._settings.clear()
+        self._settings.sync()
+        self._load()
+        QMessageBox.information(self, '已恢复', '所有设置已恢复为默认值。')
 
     def naming_rules(self) -> list[str]:
         return [self._rule_list.item(i).text() for i in range(self._rule_list.count())]
@@ -466,3 +789,70 @@ class SettingsTab(QWidget):
             self._compare_rules.pop(row)
             self._refresh_compare_rule_list()
             self._settings.setValue('compare_rules', rules_to_json(self._compare_rules))
+
+    # ── 转换器管理 ────────────────────────────────────────────────────────
+
+    def _load_converters(self):
+        self._all_converters: list[dict] = get_all_converters(self._settings)
+        self._refresh_converter_list()
+
+    def _refresh_converter_list(self):
+        self._converter_list.clear()
+        for c in self._all_converters:
+            prefix = '🔒 ' if c.get('builtin') else '✏ '
+            self._converter_list.addItem(f'{prefix}{c["name"]}')
+        self._on_converter_selected(self._converter_list.currentRow())
+
+    def _on_converter_selected(self, row: int):
+        if row < 0:
+            self._edit_conv_btn.setEnabled(False)
+            self._del_conv_btn.setEnabled(False)
+            return
+        is_builtin = self._all_converters[row].get('builtin', False)
+        self._edit_conv_btn.setEnabled(not is_builtin)
+        self._del_conv_btn.setEnabled(not is_builtin)
+
+    def _add_converter(self):
+        existing = [c['name'] for c in self._all_converters]
+        dlg = _ConverterDialog(existing_names=existing, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            conv = dlg.result()
+            if conv:
+                self._all_converters.append(conv)
+                self._persist_converters()
+                self._refresh_converter_list()
+
+    def _edit_converter(self):
+        row = self._converter_list.currentRow()
+        if row < 0:
+            return
+        c = self._all_converters[row]
+        if c.get('builtin'):
+            return
+        existing = [c2['name'] for i, c2 in enumerate(self._all_converters) if i != row]
+        dlg = _ConverterDialog(converter=c, existing_names=existing, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            conv = dlg.result()
+            if conv:
+                self._all_converters[row] = conv
+                self._persist_converters()
+                self._refresh_converter_list()
+
+    def _delete_converter(self):
+        row = self._converter_list.currentRow()
+        if row < 0:
+            return
+        c = self._all_converters[row]
+        if c.get('builtin'):
+            return
+        reply = QMessageBox.question(
+            self, '确认删除', f'确定删除转换器「{c["name"]}」吗？',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._all_converters.pop(row)
+            self._persist_converters()
+            self._refresh_converter_list()
+
+    def _persist_converters(self):
+        save_custom_converters(self._settings, self._all_converters)

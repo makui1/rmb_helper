@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QPushButton, QCheckBox, QLineEdit, QComboBox, QTextEdit,
     QFileDialog, QSizePolicy, QProgressBar,
 )
-from PySide6.QtCore import Qt, QSettings, QThread, Signal, QSize
+from PySide6.QtCore import Qt, QSettings, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
 
 from app.core.lrmx import LrmxFile
@@ -14,14 +14,33 @@ from app.core.docx_exporter import DocxExporter, get_template_path
 from app.core.pdf_exporter import PdfExporter
 from app.utils.naming import apply_rule, clean_field, PRESETS
 from app.ui.widgets.file_panel import LrmxFilePanel
+from app.ui.workers import BaseWorker
 
 _ASSETS = Path(__file__).parent.parent / 'assets'
 
 
-class _Worker(QThread):
-    log = Signal(str)                   # message (prefixed with ✓ / △ / ✗)
+class _FormatWorker(BaseWorker):
+    """后台格式化 LRMX 文件（空标签自闭合 + 姓名空格 + 身份证 x→X）。"""
+
+    def __init__(self, files: list[str]):
+        super().__init__()
+        self.files = files
+
+    def run(self):
+        total = len(self.files)
+        for i, path in enumerate(self.files):
+            try:
+                LrmxFile(Path(path)).normalize()
+                self.log.emit(f'<span style="color:#1E7A3A;">✓</span> {Path(path).name}')
+            except Exception as e:
+                self.log.emit(
+                    f'<span style="color:#B02020;">✗</span> {Path(path).name}：{e}'
+                )
+            self.progress.emit(int((i + 1) / total * 100))
+
+
+class _Worker(BaseWorker):
     finished = Signal(int, int, float)  # done, total, elapsed_seconds
-    progress = Signal(int)              # current step
 
     def __init__(self, files, output_dir, sub_dir, naming_rule, do_docx, do_pdf,
                  sibling_dir=False, collect_lrmx=False):
@@ -263,11 +282,16 @@ class ConvertTab(QWidget):
         self._run_btn.setIconSize(QSize(16, 16))
         self._run_btn.setObjectName('primary')
         self._run_btn.clicked.connect(self._run)
+        self._format_btn = QPushButton('格式化')
+        self._format_btn.setToolTip('将文件列表中所有 lrmx 的空标签转为自闭合格式')
+        self._format_btn.clicked.connect(self._on_format)
         rule_row.addWidget(rule_label)
         rule_row.addWidget(self._rule_combo)
         rule_row.addWidget(self._custom_edit)
         rule_row.addWidget(custom_btn)
         rule_row.addStretch()
+        rule_row.addWidget(self._format_btn)
+        rule_row.addSpacing(6)
         rule_row.addWidget(self._run_btn)
         bot_layout.addLayout(rule_row)
 
@@ -326,9 +350,39 @@ class ConvertTab(QWidget):
     def _on_sibling_toggled(self, checked: bool):
         self._dir_edit.setEnabled(not checked)
         self._dir_btn.setEnabled(not checked)
-        if checked:
-            self._chk_collect.setChecked(False)
-        self._chk_collect.setEnabled(not checked)
+
+    def _on_format(self):
+        """对文件列表中所有 lrmx 执行 XML 格式化（后台线程）。"""
+        files = self._file_panel.files()
+        if not files:
+            self._log.clear()
+            self._log.append('⚠ 文件列表为空，请先添加 lrmx 文件。')
+            return
+
+        self._format_btn.setEnabled(False)
+        self._run_btn.setEnabled(False)
+        self._log.clear()
+        self._log_entries.clear()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setVisible(True)
+
+        self._format_worker = _FormatWorker(files=list(files))
+        self._format_worker.log.connect(self._append_log)
+        self._format_worker.progress.connect(self._progress.setValue)
+        self._format_worker.finished.connect(self._on_format_finished)
+        self.busy_changed.emit(True)
+        self._format_worker.start()
+
+    def _on_format_finished(self):
+        self._progress.setVisible(False)
+        self._format_btn.setEnabled(True)
+        self._run_btn.setEnabled(True)
+        self.busy_changed.emit(False)
+        self._log.append('')
+        ok = sum(1 for e in self._log_entries if '✓' in e)
+        err = len(self._log_entries) - ok
+        self._log.append(f'格式化完成：{ok} 成功，{err} 失败')
 
     # ── drag & drop (tab-level, delegates to panel) ───────────────────────────
 

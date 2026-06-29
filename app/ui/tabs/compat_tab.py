@@ -6,8 +6,9 @@ from PySide6.QtWidgets import (
     QCheckBox, QLineEdit, QComboBox, QTextEdit,
     QFileDialog, QFrame, QProgressBar,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QIcon
+from app.ui.workers import BaseWorker
 from app.ui.widgets.file_panel import LrmxFilePanel
 
 from app.core.compat_processor import (
@@ -23,10 +24,9 @@ _ASSETS = Path(__file__).parent.parent / 'assets'
 
 # ── background worker ─────────────────────────────────────────────────────────
 
-class _CompatWorker(QThread):
-    log = Signal(str)
+class _CompatWorker(BaseWorker):
     finished = Signal(int, int)  # processed, total
-    progress = Signal(int)       # current step
+    # log 和 progress 已由 BaseWorker 声明
 
     def __init__(self, files, male_limit, female_limit, output_dir=None, sibling=False, update_daolignianue=True):
         super().__init__()

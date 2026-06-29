@@ -28,8 +28,15 @@ if sys.platform == 'win32':
             ('pt',      _wt.POINT),
         ]
 
+    class _NCCALCSIZE_PARAMS(ctypes.Structure):
+        _fields_ = [
+            ('rgrc',  ctypes.wintypes.RECT * 3),
+            ('lppos', ctypes.c_void_p),
+        ]
+
     _WM_NCHITTEST  = 0x0084
     _WM_SYSCOMMAND = 0x0112
+    _WM_NCCALCSIZE = 0x0083
     _SC_MINIMIZE   = 0xF020
     _SC_MAXIMIZE   = 0xF030
     _SC_RESTORE    = 0xF120
@@ -64,7 +71,7 @@ class _TitleBar(QWidget):
 
         # ── 左侧区域：应用图标 + 分隔线 + 折叠按钮
         app_icon = QLabel()
-        app_icon.setPixmap(QIcon(str(_ASSETS / 'icon.ico')).pixmap(QSize(18, 18)))
+        app_icon.setPixmap(QIcon(str(_ASSETS / 'rmb.ico')).pixmap(QSize(18, 18)))
         app_icon.setFixedSize(26, 30)
         app_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         app_icon.setStyleSheet('background: transparent;')
@@ -172,8 +179,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('干部任免审批表管理工具')
         self.resize(1250, 700)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
-        self.setWindowIcon(QIcon(str(_ASSETS / 'icon.ico')))
+        self.setWindowIcon(QIcon(str(_ASSETS / 'rmb.ico')))
         self.setStyleSheet(QSS)
         self._sidebar_container: QWidget | None = None
         self._title_bar: _TitleBar | None = None
@@ -195,6 +201,43 @@ class MainWindow(QMainWindow):
             QApplication.instance().installEventFilter(self)
         if open_path:
             self.open_lrmx(open_path)
+
+    def showEvent(self, event):
+        if sys.platform == 'win32':
+            hwnd = int(self.winId())
+            GWL_STYLE = -16
+            GWL_EXSTYLE = -20
+
+            class _MARGINS(ctypes.Structure):
+                _fields_ = [
+                    ("cxLeftWidth",   ctypes.c_int),
+                    ("cxRightWidth",  ctypes.c_int),
+                    ("cyTopHeight",   ctypes.c_int),
+                    ("cyBottomHeight",ctypes.c_int),
+                ]
+            margins = _MARGINS(0, 0, 1, 0)
+            try:
+                ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+            except Exception:
+                pass
+
+            WS_CAPTION      = 0x00C00000
+            WS_THICKFRAME   = 0x00040000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_MAXIMIZEBOX = 0x00010000
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            style |= WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+
+            SWP_FRAMECHANGED = 0x0020
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE,
+            )
+
+        super().showEvent(event)
 
     def open_lrmx(self, path: str):
         """切换到任免表编辑器 Tab 并打开指定 lrmx 文件。"""
@@ -248,9 +291,10 @@ class MainWindow(QMainWindow):
         for label, icon in [
             ('批量格式转换', 'convert.svg'),
             ('批量版本兼容', 'compat.svg'),
-            ('批量核验/更新', 'verify.svg'),
+            ('批量核验', 'verify.svg'),
             ('生成家庭关系表', 'export.svg'),
             ('任免表编辑器', 'edit.svg'),
+            ('批量更新', 'update.svg'),
         ]:
             btn = self._make_nav_btn(label, icon=icon)
             sb_layout.addWidget(btn)
@@ -324,6 +368,25 @@ class MainWindow(QMainWindow):
         if sys.platform == 'win32':
             import ctypes
             msg = _MSG.from_address(int(message))
+
+            if msg.message == _WM_NCCALCSIZE:
+                if msg.wParam:
+                    if self.isMaximized():
+                        params = _NCCALCSIZE_PARAMS.from_address(msg.lParam)
+                        SM_CXSIZEFRAME = 32
+                        SM_CYSIZEFRAME = 33
+                        SM_CXPADDEDBORDER = 92
+                        frame_x = ctypes.windll.user32.GetSystemMetrics(SM_CXSIZEFRAME)
+                        frame_y = ctypes.windll.user32.GetSystemMetrics(SM_CYSIZEFRAME)
+                        pad = ctypes.windll.user32.GetSystemMetrics(SM_CXPADDEDBORDER)
+                        inset_x = frame_x + pad
+                        inset_y = frame_y + pad
+                        params.rgrc[0].left += inset_x
+                        params.rgrc[0].top += inset_y
+                        params.rgrc[0].right -= inset_x
+                        params.rgrc[0].bottom -= inset_y
+                    return True, 0
+                return False, 0
 
             if msg.message == _WM_NCHITTEST:
                 sx = ctypes.c_short(msg.lParam & 0xFFFF).value
@@ -454,6 +517,9 @@ class MainWindow(QMainWindow):
             elif index == 4:
                 from app.ui.tabs.editor_tab import EditorTab
                 tab = EditorTab()
+            elif index == 5:
+                from app.ui.tabs.update_tab import UpdateTab
+                tab = UpdateTab(self._file_panel)
             else:
                 from app.ui.tabs.settings_tab import SettingsTab
                 tab = SettingsTab()
@@ -476,6 +542,7 @@ class MainWindow(QMainWindow):
             # 编辑器 Tab：放大窗口、禁止手动缩放（仍可最大化/最小化）
             self._resizable = False
             self.setMinimumSize(1400, 1000)
+            self.move(100,20)
         else:
             self._resizable = True
             self.setMinimumSize(800, 500)
